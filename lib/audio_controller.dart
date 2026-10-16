@@ -21,7 +21,7 @@ class AudioSettings {
   Map<String, dynamic> toMap() => {
     'enabled': enabled,
     'preset': preset,
-    'bands': bands,
+    'bands': List<double>.of(bands),
     'bass': bass,
     'gain': gain,
     'balance': balance,
@@ -57,11 +57,13 @@ class AudioController extends ChangeNotifier {
   Map<dynamic, dynamic> state = {};
   Timer? _poll, _debounce;
   bool _disposed = false, _polling = false;
+  bool _sending = false, _dirty = false;
   bool loading = true;
   String? error;
   bool get running => state['running'] == true;
   bool get playing => state['playing'] == true;
   bool get hasTrack => state['hasTrack'] == true;
+  bool get advancedDetection => state['advancedDetection'] == true;
   String get track => state['title'] as String? ?? 'Tu próxima canción';
   int get position => (state['position'] as num? ?? 0).toInt();
   int get duration => (state['duration'] as num? ?? 0).toInt();
@@ -107,6 +109,13 @@ class AudioController extends ChangeNotifier {
         final wasRunning = running;
         state = data;
         if (wasRunning && !running) settings.enabled = false;
+        if (running &&
+            !_sending &&
+            !_dirty &&
+            _debounce == null &&
+            data['settings'] is Map) {
+          settings.enabled = (data['settings'] as Map)['enabled'] == true;
+        }
         _notify();
       }
     } finally {
@@ -118,10 +127,26 @@ class AudioController extends ChangeNotifier {
     change(settings);
     error = null;
     _notify();
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 80), () async {
-      await _invoke('configure', settings.toMap());
-      await refresh();
+    _dirty = true;
+    if (!_sending && _debounce == null) _sendSettings();
+  }
+
+  Future<void> _sendSettings() async {
+    if (_disposed || !_dirty) return;
+    _dirty = false;
+    _sending = true;
+    await _invoke('configure', settings.toMap());
+    _sending = false;
+    if (_disposed) return;
+    // Send while the finger moves, retaining the final value. A debounce only
+    // applies audio changes after a continuous drag has ended.
+    _debounce = Timer(const Duration(milliseconds: 40), () {
+      _debounce = null;
+      if (_dirty) {
+        _sendSettings();
+      } else {
+        refresh();
+      }
     });
   }
 
@@ -152,6 +177,8 @@ class AudioController extends ChangeNotifier {
 
   Future<void> stop() async {
     _debounce?.cancel();
+    _debounce = null;
+    _dirty = false;
     settings.enabled = false;
     await _invoke('stop');
     await refresh();

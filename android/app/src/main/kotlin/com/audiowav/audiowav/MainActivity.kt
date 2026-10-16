@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.audiofx.AudioEffect
 import android.os.Build
+import android.os.Bundle
 import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -13,6 +15,32 @@ import org.json.JSONObject
 
 class MainActivity : FlutterActivity() {
     private var pickerResult: MethodChannel.Result? = null
+    private var panelRequested = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        panelRequested = intent?.action == AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL
+        super.onCreate(savedInstanceState)
+        openEffectPanel(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openEffectPanel(intent)
+    }
+
+    private fun openEffectPanel(intent: Intent?) {
+        if (intent?.action != AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL) return
+        panelRequested = true
+        val prefs = getSharedPreferences("studio", MODE_PRIVATE)
+        val saved = JSONObject(prefs.getString("settings", "{}") ?: "{}")
+        saved.put("enabled", true)
+        prefs.edit().putString("settings", saved.toString()).apply()
+        startEngine(Intent(this, AudioService::class.java).apply {
+            action = AudioService.OPEN_SESSION
+            putExtra(AudioEffect.EXTRA_AUDIO_SESSION, intent.getIntExtra(AudioEffect.EXTRA_AUDIO_SESSION, -1))
+        })
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -21,7 +49,7 @@ class MainActivity : FlutterActivity() {
                 try {
                     when (call.method) {
                         "initialize" -> {
-                            if (AudioService.instance == null) {
+                            if (AudioService.instance == null && !panelRequested) {
                                 val prefs = getSharedPreferences("studio", MODE_PRIVATE)
                                 val saved = JSONObject(prefs.getString("settings", "{}") ?: "{}")
                                 saved.put("enabled", false)
@@ -79,7 +107,9 @@ class MainActivity : FlutterActivity() {
 
     private fun snapshot(): Map<String, Any?> {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
-        val data = (AudioService.instance?.snapshot() ?: mapOf("running" to false, "capabilities" to AudioService.capabilities())).toMutableMap()
+        val data = (AudioService.instance?.snapshot() ?: mapOf("running" to false,
+            "advancedDetection" to (checkSelfPermission("android.permission.DUMP") == PackageManager.PERMISSION_GRANTED),
+            "capabilities" to mapOf("equalizer" to false, "bass" to false, "gain" to false, "reverb" to false))).toMutableMap()
         data["volume"] = audio.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val saved = JSONObject(getSharedPreferences("studio", MODE_PRIVATE).getString("settings", "{}") ?: "{}")
         data["settings"] = mapOf(

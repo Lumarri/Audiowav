@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -18,12 +19,20 @@ import android.media.audiofx.PresetReverb
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import org.json.JSONObject
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.io.FileDescriptor
+import java.io.PrintWriter
 
 /** User-started foreground engine. It does not record or capture audio. */
 class AudioService : Service() {
     companion object {
         const val OPEN_FILE = "com.audiowav.OPEN_FILE"
+        const val OPEN_SESSION = "com.audiowav.OPEN_SESSION"
         private const val STOP = "com.audiowav.STOP"
         private const val TOGGLE = "com.audiowav.TOGGLE"
         var instance: AudioService? = null
@@ -42,6 +51,11 @@ class AudioService : Service() {
     private var reverb: PresetReverb? = null
     private var reverbFailed = false
     private val externalRacks = mutableMapOf<Int, EffectRack>()
+    private val announcedSessions = mutableSetOf<Int>()
+    private var detectedSessions: Set<Int> = emptySet()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val detector = Executors.newSingleThreadScheduledExecutor()
+    private var detectionError: String? = null
     private var settings = JSONObject()
     private var title: String? = null
     private var error: String? = null
@@ -61,10 +75,11 @@ class AudioService : Service() {
             val source = intent.getStringExtra(AudioEffect.EXTRA_PACKAGE_NAME)
             if (session <= 0 || source.isNullOrBlank() || source == packageName || session == player?.audioSessionId) return
             if (intent.action == AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION) {
-                if (!externalRacks.containsKey(session) && externalRacks.size < 32) externalRacks[session] = EffectRack(session)
-                externalRacks[session]?.apply(settings)
+                announcedSessions.add(session)
+                reconcileSessions()
             } else if (intent.action == AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION) {
-                externalRacks.remove(session)?.release()
+                announcedSessions.remove(session)
+                reconcileSessions()
             }
         }
     }
@@ -98,6 +113,37 @@ class AudioService : Service() {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
         else { @Suppress("DEPRECATION") registerReceiver(receiver, filter) }
         configure()
+        detector.scheduleWithFixedDelay({ detectPlayback() }, 0, 1500, TimeUnit.MILLISECONDS)
+    }
+
+    private fun advancedDetection() = checkSelfPermission("android.permission.DUMP") == PackageManager.PERMISSION_GRANTED
+
+    private fun detectPlayback() {
+        if (!advancedDetection()) return
+        try {
+            val process = ProcessBuilder("dumpsys", "-t", "2", "media.audio_flinger").redirectErrorStream(true).start()
+            val dump = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor()
+            check(process.exitValue() == 0 && !dump.contains("Permission Denial")) { "No se pudo consultar la sesión de audio." }
+            val sessions = PlaybackSessions.parse(dump)
+            mainHandler.post {
+                if (instance !== this) return@post
+                detectionError = null
+                detectedSessions = sessions
+                reconcileSessions()
+            }
+        } catch (failure: Exception) {
+            mainHandler.post { if (instance === this) detectionError = failure.message }
+        }
+    }
+
+    private fun reconcileSessions() {
+        val wanted = (announcedSessions + detectedSessions).filter { it > 0 && it != player?.audioSessionId }.take(32).toSet()
+        (externalRacks.keys - wanted).forEach { externalRacks.remove(it)?.release() }
+        (wanted - externalRacks.keys).forEach { session ->
+            externalRacks[session] = EffectRack(session, external = true).also { it.apply(settings) }
+            Log.i("Audiowav", "Connected session $session: ${externalRacks[session]?.capabilities()}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -105,6 +151,11 @@ class AudioService : Service() {
             STOP -> stopSelf()
             TOGGLE -> togglePlayback()
             OPEN_FILE -> intent.getStringExtra("uri")?.let { load(Uri.parse(it), intent.getStringExtra("title") ?: "Archivo de audio") }
+            OPEN_SESSION -> {
+                configure()
+                val session = intent.getIntExtra(AudioEffect.EXTRA_AUDIO_SESSION, -1)
+                if (session > 0) { announcedSessions.add(session); reconcileSessions() }
+            }
         }
         return START_NOT_STICKY
     }
@@ -175,14 +226,13 @@ class AudioService : Service() {
 
     fun snapshot(): Map<String, Any?> {
         val racks = listOfNotNull(localRack) + externalRacks.values
-        val available = capabilities().toMutableMap()
-        if (racks.isNotEmpty()) {
-            for (name in listOf("equalizer", "bass", "gain")) available[name] = racks.any { it.capabilities()[name] == true }
-        }
-        if (prepared) available["reverb"] = !reverbFailed && runCatching { reverb?.hasControl() == true }.getOrDefault(false)
+        val available = listOf("equalizer", "bass", "gain", "reverb").associateWith { name -> racks.any { it.capabilities()[name] == true } }.toMutableMap()
+        if (prepared) available["reverb"] = available["reverb"] == true || (!reverbFailed && runCatching { reverb?.hasControl() == true }.getOrDefault(false))
         return mapOf("running" to true, "hasTrack" to prepared, "playing" to (prepared && player?.isPlaying == true),
             "position" to (if (prepared) player?.currentPosition else 0), "duration" to (if (prepared) player?.duration else 0),
-            "title" to title, "sessions" to externalRacks.size, "capabilities" to available, "error" to error)
+            "title" to title, "sessions" to externalRacks.size, "capabilities" to available, "error" to error,
+            "advancedDetection" to advancedDetection(), "detectionError" to detectionError,
+            "reverbError" to externalRacks.values.mapNotNull { it.reverbError() }.firstOrNull())
     }
 
     private fun notification(): Notification {
@@ -206,6 +256,8 @@ class AudioService : Service() {
     }
     override fun onDestroy() {
         instance = null
+        detector.shutdownNow()
+        mainHandler.removeCallbacksAndMessages(null)
         settings.put("enabled", false)
         getSharedPreferences("studio", MODE_PRIVATE).edit().putString("settings", settings.toString()).apply()
         unregisterReceiver(receiver)
@@ -215,4 +267,12 @@ class AudioService : Service() {
         super.onDestroy()
     }
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun dump(fd: FileDescriptor, writer: PrintWriter, args: Array<out String>?) {
+        writer.println("Audiowav audio diagnostics")
+        writer.println("advancedDetection=${advancedDetection()} detectionError=$detectionError")
+        writer.println("settings=$settings")
+        writer.println("local=${localRack?.diagnostics()}")
+        externalRacks.forEach { (session, rack) -> writer.println("session=$session actual=${rack.diagnostics()}") }
+    }
 }

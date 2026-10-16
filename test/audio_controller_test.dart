@@ -41,16 +41,36 @@ void main() {
     expect(controller.available('equalizer'), true);
     expect(calls.map((c) => c.method), ['initialize']);
   });
-  testWidgets('rapid slider edits send the final settings in one native call', (
+  testWidgets('slider sends immediately and retains the final value', (
     tester,
   ) async {
     controller.update((s) => s.gain = 2);
     controller.update((s) => s.gain = 4);
     controller.update((s) => s.gain = 7);
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump(const Duration(milliseconds: 40));
     final configurations = calls.where((c) => c.method == 'configure').toList();
-    expect(configurations, hasLength(1));
-    expect(configurations.single.arguments['gain'], 7);
+    expect(configurations, hasLength(2));
+    expect(configurations.first.arguments['gain'], 2);
+    expect(configurations.last.arguments['gain'], 7);
+  });
+  testWidgets('continuous dragging applies intermediate audio settings', (
+    tester,
+  ) async {
+    for (var i = 1; i <= 10; i++) {
+      controller.update((s) => s.gain = i.toDouble());
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final duringDrag = calls.where((c) => c.method == 'configure').toList();
+    expect(duringDrag.length, greaterThan(2));
+    expect(duringDrag.first.arguments['gain'], 1);
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(
+      calls.lastWhere((c) => c.method == 'configure').arguments['gain'],
+      10,
+    );
+    await tester.pump(const Duration(milliseconds: 80));
   });
   test('clamps persisted controls to supported ranges', () {
     final settings = AudioSettings()

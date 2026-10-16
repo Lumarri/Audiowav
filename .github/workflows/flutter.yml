@@ -20,6 +20,8 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - run: flutter build apk --debug
+      - run: bash ./gradlew testDebugUnitTest
+        working-directory: android
       - uses: actions/upload-artifact@v4
         with:
           name: audiowav-debug-apk

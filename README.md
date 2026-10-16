@@ -19,11 +19,30 @@ Estudio de audio móvil construido con Flutter y un motor nativo Kotlin para And
 
 | Control | Archivos en Audiowav | Otras aplicaciones |
 | --- | --- | --- |
-| Ecualizador, graves y ganancia | Sí, si el dispositivo los admite | Solo sesiones compatibles que la otra app anuncie |
-| Reverberación y balance | Sí, si hay soporte de reverb | No |
+| Ecualizador, graves y ganancia | Sí, si el dispositivo los admite | Sesiones compartidas o detección avanzada por DUMP |
+| Reverberación | Sí, si hay soporte de reverb | Requiere reverb de inserción del fabricante |
+| Balance | Sí | No |
 | Volumen multimedia | Volumen del sistema | Volumen del sistema |
 
-Para otras apps: activa el motor primero y luego inicia o reinicia su reproducción. Se escuchan los broadcasts `OPEN_AUDIO_EFFECT_CONTROL_SESSION` y `CLOSE_AUDIO_EFFECT_CONTROL_SESSION` mientras el servicio está activo. No se utiliza el antiguo truco de insertar un ecualizador en la sesión global 0. No se captura ni graba el audio del teléfono.
+Para otras apps: activa el motor y reproduce música. Los controles se habilitan cuando existe una sesión conectada con un efecto controlable, y no simplemente porque el dispositivo anuncie un efecto instalado. Se siguen admitiendo los broadcasts `OPEN_AUDIO_EFFECT_CONTROL_SESSION` y `CLOSE_AUDIO_EFFECT_CONTROL_SESSION`.
+
+### Detección avanzada de otras apps
+
+Muchas apps no anuncian sus sesiones. Para encontrarlas automáticamente, conecta el teléfono por USB con depuración habilitada y concede una vez este permiso desde una PC:
+
+```sh
+adb shell pm grant com.audiowav.audiowav android.permission.DUMP
+```
+
+`DUMP` permite leer diagnósticos del sistema. Audiowav consulta únicamente `dumpsys media.audio_flinger` en un hilo de trabajo mientras el motor está activo, extrae las sesiones de música/juegos de las tablas de reproducción, excluye su propio reproductor y libera los efectos al desaparecer las sesiones. No guarda ni transmite el volcado. El permiso permanece hasta revocarlo o desinstalar:
+
+```sh
+adb shell pm revoke com.audiowav.audiowav android.permission.DUMP
+```
+
+La reverb externa usa la API pública `EnvironmentalReverb` sobre cada sesión y verifica que Android haya seleccionado un efecto **de inserción**, con ambientes y nivel ajustables. Esto depende del fabricante. Si la creación, el modo de conexión o los parámetros fallan, la app informa que la reverberación externa no está disponible. La reverb local conserva el efecto auxiliar conectado al `MediaPlayer`.
+
+Los cambios de controles se envían durante el arrastre, con un intervalo de 40 ms entre envíos y conservación del último valor. No se utiliza la sesión global 0 para insertar efectos. No se captura ni graba audio.
 
 El aumento de ganancia actúa sobre la señal, no aumenta la potencia física del altavoz ni elimina los límites de volumen de Android. La ganancia y los graves altos pueden distorsionar.
 
@@ -66,5 +85,9 @@ Consulta [la guía de pruebas en dispositivo](docs/device-testing.md) para verif
 - `android/app/src/main/kotlin/com/audiowav/audiowav/MainActivity.kt`: canal `audiowav/audio` y selector de archivos.
 - `AudioService.kt`: reproducción, sesiones externas, notificación, foco de audio y reverberación auxiliar.
 - `EffectRack.kt`: efectos por sesión e interpolación del ecualizador.
+- `PlaybackSessions.kt`: parser de sesiones para detección avanzada; pruebas JVM en `android/app/src/test`.
+- `InsertReverb.kt`: adaptación opcional de la reverberación de inserción del fabricante.
+
+La versión 1.0.1 se comprobó en un Moto g24 power con Android 14 sobre una sesión externa de RVX Music: ecualizador, graves, ganancia y reverb conectados simultáneamente, con lectura de sus parámetros reales. Detalles en la guía de pruebas.
 
 Referencias: [AudioEffect](https://developer.android.com/reference/android/media/audiofx/AudioEffect), [PresetReverb](https://developer.android.com/reference/android/media/audiofx/PresetReverb), [LoudnessEnhancer](https://developer.android.com/reference/android/media/audiofx/LoudnessEnhancer).

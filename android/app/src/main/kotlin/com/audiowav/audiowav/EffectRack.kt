@@ -9,10 +9,12 @@ import kotlin.math.ln
 import kotlin.math.roundToInt
 
 /** Each rack owns effects for one real session; never attaches insert effects to session 0. */
-class EffectRack(session: Int) {
+class EffectRack(session: Int, external: Boolean = false) {
     private var eq = runCatching { Equalizer(0, session) }.getOrNull()
     private var bass = runCatching { BassBoost(0, session) }.getOrNull()
     private var gain = runCatching { LoudnessEnhancer(session) }.getOrNull()
+    private val insertAttempt = if (external) runCatching { InsertReverb(session) } else null
+    private val insertReverb = insertAttempt?.getOrNull()
     private val frequencies = doubleArrayOf(60.0, 230.0, 910.0, 3600.0, 14000.0)
     private var eqFailed = false
     private var bassFailed = false
@@ -47,6 +49,7 @@ class EffectRack(session: Int) {
                 check(it.setEnabled(enabled && db > 0) == AudioEffect.SUCCESS)
             }
         }.isFailure
+        insertReverb?.apply(enabled, settings.optInt("reverb", 0).coerceIn(0, 6), settings.optDouble("wet", 0.25).coerceIn(0.0, 1.0))
     }
 
     private fun interpolate(frequency: Double, levels: DoubleArray): Double {
@@ -64,10 +67,25 @@ class EffectRack(session: Int) {
     fun capabilities() = mapOf(
         "equalizer" to (!eqFailed && runCatching { eq?.hasControl() == true }.getOrDefault(false)),
         "bass" to (!bassFailed && runCatching { bass?.hasControl() == true && bass?.strengthSupported == true }.getOrDefault(false)),
-        "gain" to (!gainFailed && runCatching { gain?.hasControl() == true }.getOrDefault(false))
+        "gain" to (!gainFailed && runCatching { gain?.hasControl() == true }.getOrDefault(false)),
+        "reverb" to (insertReverb?.available() == true)
+    )
+
+    fun reverbError(): String? = insertAttempt?.exceptionOrNull()?.let { it.cause?.message ?: it.message } ?: insertReverb?.failure
+
+    fun diagnostics(): Map<String, Any?> = mapOf(
+        "control" to capabilities(),
+        "eqEnabled" to runCatching { eq?.enabled }.getOrNull(),
+        "eqLevelsMb" to runCatching { eq?.let { effect -> List(effect.numberOfBands.toInt()) { effect.getBandLevel(it.toShort()).toInt() } } }.getOrNull(),
+        "bassStrength" to runCatching { bass?.roundedStrength }.getOrNull(),
+        "gainEnabled" to runCatching { gain?.enabled }.getOrNull(),
+        "gainMb" to runCatching { gain?.targetGain }.getOrNull(),
+        "reverb" to insertReverb?.diagnostics(),
+        "reverbError" to reverbError()
     )
 
     fun release() {
+        insertReverb?.release()
         listOf(eq, bass, gain).forEach { effect -> runCatching { effect?.release() } }
         eq = null; bass = null; gain = null
     }

@@ -148,7 +148,10 @@ class _StudioScreenState extends State<StudioScreen> {
                                       ? 'Conectando…'
                                       : audio.running
                                       ? (s.enabled
-                                            ? 'Efectos activados'
+                                            ? (audio.sessions > 0 ||
+                                                      audio.hasTrack
+                                                  ? 'Efectos conectados'
+                                                  : 'Esperando una sesión de audio')
                                             : 'Efectos en bypass')
                                       : 'Actívalo para comenzar',
                                   style: const TextStyle(
@@ -193,6 +196,17 @@ class _StudioScreenState extends State<StudioScreen> {
                           ],
                         ),
                       ],
+                      if (audio.running &&
+                          s.enabled &&
+                          audio.sessions == 0 &&
+                          !audio.hasTrack)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 10),
+                          child: Text(
+                            'No hay audio conectado: los controles se habilitan cuando se detecte una sesión.',
+                            style: TextStyle(color: _muted, fontSize: 11),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -354,11 +368,17 @@ class _StudioScreenState extends State<StudioScreen> {
                             : null,
                       ),
                       const Text(
-                        'Reverberación y balance se aplican al reproductor de Audiowav.',
+                        'Reverberación en otras apps si el teléfono admite efectos de inserción. Balance: reproductor local.',
                         style: TextStyle(fontSize: 11, color: _muted),
                       ),
                       if (canEdit && !audio.available('reverb'))
                         _unavailable('Reverberación'),
+                      if (audio.state['reverbError'] != null &&
+                          audio.sessions > 0)
+                        Text(
+                          audio.state['reverbError'].toString(),
+                          style: const TextStyle(color: _muted, fontSize: 11),
+                        ),
                     ],
                   ),
                 ),
@@ -412,7 +432,7 @@ class _StudioScreenState extends State<StudioScreen> {
                         s.balance,
                         -1,
                         1,
-                        canEdit
+                        canEdit && audio.hasTrack
                             ? (v) => audio.update((s) => s.balance = v)
                             : null,
                       ),
@@ -551,10 +571,26 @@ class _StudioScreenState extends State<StudioScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Activa el motor y después inicia la música en una app que comparta su sesión de audio. La compatibilidad depende de la app y del teléfono.',
+                Text(
+                  audio.advancedDetection
+                      ? 'Detección avanzada activada. Inicia la música en otra app: Audiowav conecta sus efectos automáticamente en unos segundos.'
+                      : 'Activa el motor y después inicia la música en una app que comparta su sesión. Para detectar otras apps automáticamente, habilita la detección avanzada una vez desde una PC.',
                   style: TextStyle(color: _muted, height: 1.5, fontSize: 12),
                 ),
+                if (audio.supported && !audio.advancedDetection) ...[
+                  const SizedBox(height: 10),
+                  const SelectableText(
+                    'adb shell pm grant com.audiowav.audiowav android.permission.DUMP',
+                    style: TextStyle(color: _muted, fontSize: 11),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'El permiso permite leer diagnósticos del sistema para localizar sesiones de audio. No se graba sonido.',
+                    style: TextStyle(color: _muted, fontSize: 11),
+                  ),
+                ],
+                if (audio.state['detectionError'] != null)
+                  _notice(audio.state['detectionError'].toString()),
                 const SizedBox(height: 28),
                 const Center(
                   child: Text(
@@ -668,7 +704,7 @@ class _StudioScreenState extends State<StudioScreen> {
             ),
             SizedBox(height: 16),
             Text(
-              'Audiowav usa los efectos de Android. El ecualizador adapta sus 5 controles a las bandas del dispositivo.\n\nLos efectos para otras apps requieren una sesión compatible. Balance y reverberación funcionan con los archivos abiertos aquí.\n\nLa ganancia aumenta el nivel de la señal; la potencia máxima depende del equipo. Usa un volumen cómodo y evita la distorsión.',
+              'Audiowav usa los efectos de Android. El ecualizador adapta sus 5 controles a las bandas del dispositivo.\n\nLa detección avanzada encuentra sesiones de otras apps con el permiso de diagnóstico DUMP, habilitado por USB. La reverberación externa depende de un efecto de inserción del fabricante; si Android no permite usarlo, se muestra como no disponible. El balance funciona con los archivos abiertos aquí.\n\nLa ganancia aumenta el nivel de la señal; la potencia máxima depende del equipo. Usa un volumen cómodo y evita la distorsión.',
               style: TextStyle(color: _muted, height: 1.6),
             ),
           ],
