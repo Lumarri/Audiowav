@@ -95,4 +95,24 @@ void main() {
     expect(calls, isEmpty);
     unsupported.dispose();
   });
+  test('native decay limits adapt the dial without disabling it', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          channel,
+          (call) async => {
+            'running': true,
+            'reverbMaxDecayMs': 7000,
+            'settings': {
+              'reverb': 3,
+              'reverbParams': {'decay': 12},
+            },
+            'capabilities': {'reverb': true},
+            'reverbControls': {'decay': true},
+          },
+        );
+    await controller.initialize();
+    expect(controller.maxReverbDecay, 7);
+    expect(controller.settings.reverbParams.decay, 7);
+    expect(controller.reverbControlAvailable('decay'), true);
+  });
 }

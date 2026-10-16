@@ -21,7 +21,7 @@ object PlaybackSessions {
             val session = fields.getOrNull(active + 2)?.toIntOrNull() ?: continue
             val stream = fields.getOrNull(active + 9)?.toIntOrNull()
             val usage = fields.getOrNull(active + 10)?.toIntOrNull()
-            if (session > 0 && stream == 3 && usage in setOf(1, 14)) sessions.add(session)
+            if (fields[active] == "yes" && session > 0 && stream == 3 && usage in setOf(1, 14)) sessions.add(session)
         }
         return sessions
     }

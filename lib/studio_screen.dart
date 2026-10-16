@@ -3,17 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'audio_controller.dart';
+import 'reverb_panel.dart';
 
 const _lime = Color(0xFFB8F76A), _muted = Color(0xFF96A0AE);
-const _reverbs = [
-  'Sin efecto',
-  'Habitación pequeña',
-  'Habitación mediana',
-  'Habitación grande',
-  'Sala mediana',
-  'Gran sala',
-  'Placa',
-];
 
 class StudioScreen extends StatefulWidget {
   const StudioScreen({super.key, this.controller});
@@ -321,67 +313,7 @@ class _StudioScreenState extends State<StudioScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _panel(
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _heading(
-                        Icons.surround_sound_rounded,
-                        'Espacio sonoro',
-                        'REVERB',
-                      ),
-                      const SizedBox(height: 18),
-                      DropdownButtonFormField<int>(
-                        initialValue: s.reverb,
-                        decoration: InputDecoration(
-                          labelText: 'Ambiente',
-                          filled: true,
-                          fillColor: Colors.black.withValues(alpha: .18),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                        items: List.generate(
-                          _reverbs.length,
-                          (i) => DropdownMenuItem(
-                            value: i,
-                            child: Text(
-                              _reverbs[i],
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          ),
-                        ),
-                        onChanged: canEdit && audio.available('reverb')
-                            ? (v) => audio.update((s) => s.reverb = v!)
-                            : null,
-                      ),
-                      const SizedBox(height: 16),
-                      _control(
-                        'Mezcla de reverberación',
-                        '${(s.wet * 100).round()}%',
-                        s.wet,
-                        0,
-                        1,
-                        canEdit && audio.available('reverb') && s.reverb != 0
-                            ? (v) => audio.update((s) => s.wet = v)
-                            : null,
-                      ),
-                      const Text(
-                        'Reverberación en otras apps si el teléfono admite efectos de inserción. Balance: reproductor local.',
-                        style: TextStyle(fontSize: 11, color: _muted),
-                      ),
-                      if (canEdit && !audio.available('reverb'))
-                        _unavailable('Reverberación'),
-                      if (audio.state['reverbError'] != null &&
-                          audio.sessions > 0)
-                        Text(
-                          audio.state['reverbError'].toString(),
-                          style: const TextStyle(color: _muted, fontSize: 11),
-                        ),
-                    ],
-                  ),
-                ),
+                _panel(ReverbPanel(audio: audio)),
                 const SizedBox(height: 16),
                 _panel(
                   Column(
@@ -618,7 +550,7 @@ class _StudioScreenState extends State<StudioScreen> {
       borderRadius: BorderRadius.circular(20),
       border: Border.all(color: Colors.white.withValues(alpha: .06)),
     ),
-    child: child,
+    child: Material(type: MaterialType.transparency, child: child),
   );
   Widget _notice(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 16),

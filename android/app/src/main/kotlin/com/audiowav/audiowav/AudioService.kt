@@ -15,7 +15,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.audiofx.AudioEffect
-import android.media.audiofx.PresetReverb
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -48,7 +47,7 @@ class AudioService : Service() {
     private var player: MediaPlayer? = null
     private var prepared = false
     private var localRack: EffectRack? = null
-    private var reverb: PresetReverb? = null
+    private var reverb: InsertReverb? = null
     private var reverbFailed = false
     private val externalRacks = mutableMapOf<Int, EffectRack>()
     private val announcedSessions = mutableSetOf<Int>()
@@ -87,6 +86,7 @@ class AudioService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        InsertReverb.loadDeviceLimits(this)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attributes)
             .setOnAudioFocusChangeListener { change ->
@@ -181,7 +181,7 @@ class AudioService : Service() {
                 prepared = true
                 localRack = EffectRack(ready.audioSessionId).also { it.apply(settings) }
                 reverbFailed = false
-                reverb = runCatching { PresetReverb(0, 0) }.getOrElse { reverbFailed = true; null }
+                reverb = runCatching { InsertReverb(0, requireInsert = false).also { it.attachTo(ready) } }.getOrElse { reverbFailed = true; null }
                 applyPlayerSettings()
                 if (audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) ready.start()
                 else error = "Otra aplicación tiene prioridad de audio. Pulsa reproducir para intentarlo otra vez."
@@ -203,15 +203,7 @@ class AudioService : Service() {
         val pan = if (enabled) settings.optDouble("balance", 0.0).coerceIn(-1.0, 1.0).toFloat() else 0f
         val duck = if (ducked) 0.2f else 1f
         player?.setVolume((if (pan > 0) 1 - pan else 1f) * duck, (if (pan < 0) 1 + pan else 1f) * duck)
-        reverbFailed = reverbFailed || runCatching {
-            reverb?.let {
-                val preset = settings.optInt("reverb", 0).coerceIn(0, 6)
-                it.preset = preset.toShort()
-                check(it.setEnabled(enabled && preset != 0) == AudioEffect.SUCCESS)
-                player?.attachAuxEffect(it.id)
-                player?.setAuxEffectSendLevel(if (enabled && preset != 0) settings.optDouble("wet", 0.25).coerceIn(0.0, 1.0).toFloat() else 0f)
-            }
-        }.isFailure
+        reverb?.apply(settings)
     }
 
     fun togglePlayback() {
@@ -227,11 +219,15 @@ class AudioService : Service() {
     fun snapshot(): Map<String, Any?> {
         val racks = listOfNotNull(localRack) + externalRacks.values
         val available = listOf("equalizer", "bass", "gain", "reverb").associateWith { name -> racks.any { it.capabilities()[name] == true } }.toMutableMap()
-        if (prepared) available["reverb"] = available["reverb"] == true || (!reverbFailed && runCatching { reverb?.hasControl() == true }.getOrDefault(false))
+        if (prepared) available["reverb"] = available["reverb"] == true || (!reverbFailed && reverb?.available() == true)
+        val support = externalRacks.values.map { it.reverbControls() } + listOfNotNull(reverb?.controlSupport())
+        val reverbControls = support.flatMap { it.keys }.distinct().associateWith { key -> support.any { it[key] == true } }
         return mapOf("running" to true, "hasTrack" to prepared, "playing" to (prepared && player?.isPlaying == true),
             "position" to (if (prepared) player?.currentPosition else 0), "duration" to (if (prepared) player?.duration else 0),
             "title" to title, "sessions" to externalRacks.size, "capabilities" to available, "error" to error,
             "advancedDetection" to advancedDetection(), "detectionError" to detectionError,
+            "reverbControls" to reverbControls,
+            "reverbMaxDecayMs" to (externalRacks.values.mapNotNull { it.maximumReverbDecayMs() } + listOfNotNull(reverb?.maximumDecayMs())).minOrNull(),
             "reverbError" to externalRacks.values.mapNotNull { it.reverbError() }.firstOrNull())
     }
 
@@ -273,6 +269,7 @@ class AudioService : Service() {
         writer.println("advancedDetection=${advancedDetection()} detectionError=$detectionError")
         writer.println("settings=$settings")
         writer.println("local=${localRack?.diagnostics()}")
+        writer.println("localReverb=${reverb?.diagnostics()}")
         externalRacks.forEach { (session, rack) -> writer.println("session=$session actual=${rack.diagnostics()}") }
     }
 }

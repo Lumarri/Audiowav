@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'reverb_settings.dart';
+
 const equalizerPresets = <String, List<double>>{
   'Plano': [0, 0, 0, 0, 0],
   'Potente': [5, 3, -1, 2, 4],
@@ -18,6 +20,9 @@ class AudioSettings {
   List<double> bands = [0, 0, 0, 0, 0];
   double bass = 0, gain = 0, balance = 0, wet = .25;
   int reverb = 0;
+  ReverbParameters reverbParams = ReverbParameters();
+  String reverbProfile = 'Personalizado';
+  List<ReverbPreset> reverbUserPresets = [];
   Map<String, dynamic> toMap() => {
     'enabled': enabled,
     'preset': preset,
@@ -27,6 +32,9 @@ class AudioSettings {
     'balance': balance,
     'reverb': reverb,
     'wet': wet,
+    'reverbParams': reverbParams.toMap(),
+    'reverbProfile': reverbProfile,
+    'reverbUserPresets': reverbUserPresets.map((p) => p.toMap()).toList(),
   };
   void restore(Map<dynamic, dynamic> map) {
     enabled = map['enabled'] == true;
@@ -42,6 +50,17 @@ class AudioSettings {
     balance = (map['balance'] as num? ?? 0).toDouble().clamp(-1, 1);
     reverb = (map['reverb'] as num? ?? 0).toInt().clamp(0, 6);
     wet = (map['wet'] as num? ?? .25).toDouble().clamp(0, 1);
+    reverbParams = ReverbParameters.fromMap(
+      map['reverbParams'] as Map? ?? {},
+      legacyMode: reverb,
+    );
+    reverbProfile = map['reverbProfile'] as String? ?? 'Personalizado';
+    reverbUserPresets = (map['reverbUserPresets'] as List? ?? [])
+        .whereType<Map>()
+        .map(ReverbPreset.fromMap)
+        .whereType<ReverbPreset>()
+        .take(16)
+        .toList();
   }
 }
 
@@ -64,6 +83,11 @@ class AudioController extends ChangeNotifier {
   bool get playing => state['playing'] == true;
   bool get hasTrack => state['hasTrack'] == true;
   bool get advancedDetection => state['advancedDetection'] == true;
+  double get maxReverbDecay =>
+      ((state['reverbMaxDecayMs'] as num? ?? 20000).toDouble() / 1000).clamp(
+        .1,
+        20,
+      );
   String get track => state['title'] as String? ?? 'Tu próxima canción';
   int get position => (state['position'] as num? ?? 0).toInt();
   int get duration => (state['duration'] as num? ?? 0).toInt();
@@ -71,6 +95,54 @@ class AudioController extends ChangeNotifier {
   double get volume => (state['volume'] as num? ?? .5).toDouble();
   bool available(String effect) =>
       supported && (state['capabilities'] as Map?)?[effect] == true;
+  bool reverbControlAvailable(String name) =>
+      available('reverb') && (state['reverbControls'] as Map?)?[name] != false;
+
+  void selectReverbPreset(ReverbPreset preset, {bool userPreset = false}) =>
+      update((s) {
+        s.reverb = preset.mode;
+        s.reverbParams = preset.parameters();
+        s.reverbParams.decay = s.reverbParams.decay.clamp(.1, maxReverbDecay);
+        s.wet = preset.wet;
+        s.reverbProfile = userPreset ? 'user:${preset.name}' : preset.name;
+      });
+  void editReverb(void Function(AudioSettings) change) => update((s) {
+    change(s);
+    s.reverbParams.decay = s.reverbParams.decay.clamp(.1, maxReverbDecay);
+    s.reverbProfile = 'Personalizado';
+  });
+  bool saveReverbPreset(String name) {
+    name = name.trim();
+    if (name.isEmpty || name.length > 32) return false;
+    final existing = settings.reverbUserPresets.indexWhere(
+      (p) => p.name.toLowerCase() == name.toLowerCase(),
+    );
+    if (existing < 0 && settings.reverbUserPresets.length >= 16) {
+      error = 'Puedes guardar hasta 16 presets. Elimina uno para continuar.';
+      _notify();
+      return false;
+    }
+    update((s) {
+      final preset = ReverbPreset(
+        name,
+        s.reverb == 0 ? 3 : s.reverb,
+        s.reverbParams.toMap(),
+        s.wet,
+      );
+      if (existing >= 0) {
+        s.reverbUserPresets[existing] = preset;
+      } else {
+        s.reverbUserPresets.add(preset);
+      }
+      s.reverbProfile = 'user:$name';
+    });
+    return true;
+  }
+
+  void deleteReverbPreset(String name) => update((s) {
+    s.reverbUserPresets.removeWhere((p) => p.name == name);
+    if (s.reverbProfile == 'user:$name') s.reverbProfile = 'Personalizado';
+  });
 
   Future<void> initialize() async {
     if (supported) {
@@ -79,6 +151,10 @@ class AudioController extends ChangeNotifier {
       if (data != null) {
         settings.restore(data['settings'] as Map? ?? {});
         state = data;
+        settings.reverbParams.decay = settings.reverbParams.decay.clamp(
+          .1,
+          maxReverbDecay,
+        );
       }
       settings.enabled = running && settings.enabled;
       _poll = Timer.periodic(const Duration(seconds: 1), (_) => refresh());
@@ -108,6 +184,10 @@ class AudioController extends ChangeNotifier {
       if (data != null && !_disposed) {
         final wasRunning = running;
         state = data;
+        settings.reverbParams.decay = settings.reverbParams.decay.clamp(
+          .1,
+          maxReverbDecay,
+        );
         if (wasRunning && !running) settings.enabled = false;
         if (running &&
             !_sending &&

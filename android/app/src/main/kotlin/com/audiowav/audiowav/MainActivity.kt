@@ -112,13 +112,15 @@ class MainActivity : FlutterActivity() {
             "capabilities" to mapOf("equalizer" to false, "bass" to false, "gain" to false, "reverb" to false))).toMutableMap()
         data["volume"] = audio.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val saved = JSONObject(getSharedPreferences("studio", MODE_PRIVATE).getString("settings", "{}") ?: "{}")
-        data["settings"] = mapOf(
-            "enabled" to saved.optBoolean("enabled"), "preset" to saved.optString("preset", "Plano"),
-            "bands" to List(5) { saved.optJSONArray("bands")?.optDouble(it, 0.0) ?: 0.0 },
-            "bass" to saved.optDouble("bass", 0.0), "gain" to saved.optDouble("gain", 0.0),
-            "balance" to saved.optDouble("balance", 0.0), "reverb" to saved.optInt("reverb", 0), "wet" to saved.optDouble("wet", 0.25)
-        )
+        data["settings"] = channelValue(saved)
         return data
+    }
+
+    private fun channelValue(value: Any?): Any? = when (value) {
+        null, JSONObject.NULL -> null
+        is JSONObject -> value.keys().asSequence().associateWith { channelValue(value.opt(it)) }
+        is org.json.JSONArray -> List(value.length()) { channelValue(value.opt(it)) }
+        else -> value
     }
 
     @Deprecated("Uses the platform document picker callback")

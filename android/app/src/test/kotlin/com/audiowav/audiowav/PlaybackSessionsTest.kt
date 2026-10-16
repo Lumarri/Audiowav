@@ -24,7 +24,7 @@ class PlaybackSessionsTest {
                 Session State Registered Enabled Suspended:
                 99999 003 y y n
         """.trimIndent()
-        assertEquals(setOf(30489, 30490, 40001), PlaybackSessions.parse(dump))
+        assertEquals(setOf(30489, 40001), PlaybackSessions.parse(dump))
     }
     @Test fun ignoresInvalidOrMissingPlaybackTables() {
         assertEquals(emptySet<Int>(), PlaybackSessions.parse("Permission Denial: cannot dump AudioFlinger"))

@@ -7,7 +7,7 @@ Estudio de audio móvil construido con Flutter y un motor nativo Kotlin para And
 - Ecualizador de cinco controles (60 Hz, 230 Hz, 910 Hz, 3.6 kHz, 14 kHz), de −12 a +12 dB. Se interpolan en escala logarítmica a las bandas reales de Android.
 - Presets Plano, Potente, Rock, Voces, Electrónica y Acústico; ajuste personalizado.
 - Refuerzo de graves y ganancia de hasta +12 dB mediante los efectos nativos del dispositivo.
-- Reverberación: habitaciones pequeña/mediana/grande, salas mediana/grande y placa, con mezcla ajustable.
+- Reverb Studio: perillas de decaimiento, difusión, densidad, amortiguación, tono de agudos y reflexiones, con mezcla ajustable y presets personales. [Alcance y diferencias con Fruity Reeverb 2](docs/reverb-studio.md).
 - Balance estéreo y control del volumen multimedia del teléfono.
 - Reproductor local: selección de archivos mediante el selector del sistema, reproducción, pausa y búsqueda.
 - Servicio en primer plano con notificación para reproducir en segundo plano y detener el motor.
@@ -40,7 +40,7 @@ adb shell pm grant com.audiowav.audiowav android.permission.DUMP
 adb shell pm revoke com.audiowav.audiowav android.permission.DUMP
 ```
 
-La reverb externa usa la API pública `EnvironmentalReverb` sobre cada sesión y verifica que Android haya seleccionado un efecto **de inserción**, con ambientes y nivel ajustables. Esto depende del fabricante. Si la creación, el modo de conexión o los parámetros fallan, la app informa que la reverberación externa no está disponible. La reverb local conserva el efecto auxiliar conectado al `MediaPlayer`.
+La reverb externa usa la API pública `EnvironmentalReverb` sobre cada sesión y verifica que Android haya seleccionado un efecto **de inserción**. Esto depende del fabricante. Si la creación, el modo de conexión o los parámetros fallan, la app informa que la reverberación externa no está disponible. La reverb local utiliza los mismos controles con un efecto ambiental auxiliar conectado al `MediaPlayer`.
 
 Los cambios de controles se envían durante el arrastre, con un intervalo de 40 ms entre envíos y conservación del último valor. No se utiliza la sesión global 0 para insertar efectos. No se captura ni graba audio.
 

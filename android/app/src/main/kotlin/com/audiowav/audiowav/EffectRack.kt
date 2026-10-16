@@ -19,10 +19,16 @@ class EffectRack(session: Int, external: Boolean = false) {
     private var eqFailed = false
     private var bassFailed = false
     private var gainFailed = false
+    private var eqSignature: String? = null
+    private var bassSignature: String? = null
+    private var gainSignature: String? = null
 
     fun apply(settings: JSONObject) {
         val enabled = settings.optBoolean("enabled", false)
-        eqFailed = runCatching {
+        val eqKey = "$enabled:${settings.optJSONArray("bands") ?: "[]"}"
+        val bassKey = "$enabled:${settings.optDouble("bass", 0.0)}"
+        val gainKey = "$enabled:${settings.optDouble("gain", 0.0)}"
+        if (eqSignature != eqKey) eqFailed = runCatching {
             eq?.let { effect ->
                 val range = effect.bandLevelRange
                 val bands = settings.optJSONArray("bands")
@@ -33,23 +39,26 @@ class EffectRack(session: Int, external: Boolean = false) {
                     effect.setBandLevel(band.toShort(), (level * 100).roundToInt().coerceIn(range[0].toInt(), range[1].toInt()).toShort())
                 }
                 check(effect.setEnabled(enabled) == AudioEffect.SUCCESS)
+                eqSignature = eqKey
             }
         }.isFailure
-        bassFailed = runCatching {
+        if (bassSignature != bassKey) bassFailed = runCatching {
             bass?.let {
                 val strength = settings.optDouble("bass", 0.0).coerceIn(0.0, 1.0)
                 if (it.strengthSupported) it.setStrength((strength * 1000).roundToInt().toShort())
                 check(it.setEnabled(enabled && strength > 0) == AudioEffect.SUCCESS)
+                bassSignature = bassKey
             }
         }.isFailure
-        gainFailed = runCatching {
+        if (gainSignature != gainKey) gainFailed = runCatching {
             gain?.let {
                 val db = settings.optDouble("gain", 0.0).coerceIn(0.0, 12.0)
                 it.setTargetGain((db * 100).roundToInt())
                 check(it.setEnabled(enabled && db > 0) == AudioEffect.SUCCESS)
+                gainSignature = gainKey
             }
         }.isFailure
-        insertReverb?.apply(enabled, settings.optInt("reverb", 0).coerceIn(0, 6), settings.optDouble("wet", 0.25).coerceIn(0.0, 1.0))
+        insertReverb?.apply(settings)
     }
 
     private fun interpolate(frequency: Double, levels: DoubleArray): Double {
@@ -72,6 +81,8 @@ class EffectRack(session: Int, external: Boolean = false) {
     )
 
     fun reverbError(): String? = insertAttempt?.exceptionOrNull()?.let { it.cause?.message ?: it.message } ?: insertReverb?.failure
+    fun reverbControls() = insertReverb?.controlSupport() ?: emptyMap()
+    fun maximumReverbDecayMs() = insertReverb?.maximumDecayMs()
 
     fun diagnostics(): Map<String, Any?> = mapOf(
         "control" to capabilities(),
