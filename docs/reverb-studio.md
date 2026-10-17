@@ -1,5 +1,33 @@
 # Reverb Studio
 
+## DSP local en la versión 1.2.0
+
+Los archivos abiertos dentro de Audiowav usan un motor C++ propio. La ruta es `MediaExtractor` → `MediaCodec` (o PCM directo) → DSP → `AudioTrack`. No se carga el archivo completo en memoria. El código de procesamiento no hace asignaciones de memoria ni llamadas a Flutter durante cada bloque.
+
+El motor incluye filtros de entrada de graves y agudos, predelay, primeras reflexiones, difusores allpass y una red de ocho retardos con matriz de Hadamard normalizada. El decaimiento controla la ganancia de realimentación según la longitud de cada retardo; una transición alrededor de 4 kHz modifica el decaimiento relativo de agudos. Los parámetros se interpolan entre bloques para reducir saltos durante los ajustes. Los niveles de salida se limitan a ±1; una mezcla alta puede recortar la señal.
+
+Al abrir un archivo, el panel indica **DSP propio · Archivo local** y habilita:
+
+| Control adicional o adaptado | Función local |
+| --- | --- |
+| PRE DEL | Retardo antes de la reverberación, incluidas las primeras reflexiones, de 0 a 100 ms |
+| SIZE | Longitudes de las líneas de retardo de la cola |
+| DEC | Decaimiento ajustable de 0,1 a 20 segundos; no aplica el límite del efecto del fabricante |
+| L.CUT | Filtro de graves en la entrada del efecto, 20–2000 Hz |
+| H.CUT | Filtro de agudos en la entrada del efecto, 2–20 kHz; limitado internamente según el muestreo |
+| DRY | Nivel independiente de la señal original, 0–100% |
+| WIDTH | Anchura del retorno, desde mono a estéreo ampliado, 0–200% |
+
+WET, reflexiones, difusión, tono y amortiguación también actúan sobre el motor propio. Los filtros son de primer orden. Los presets existentes conservan su funcionamiento y reciben valores por defecto para los controles nuevos; los presets personales guardan todos los controles.
+
+Pausar detiene también la cola; reanudar continúa la reproducción. Al buscar otra posición se vacían la cola, la salida pendiente y el estado del decodificador. Al terminar el archivo se procesa silencio hasta que la cola sea suficientemente baja, con un máximo de 22 segundos, y se espera a que la salida pendiente termine. Reproducir de nuevo tras el final vuelve al inicio.
+
+El ecualizador, los graves y la ganancia siguen usando los efectos Android sobre la sesión de la salida local. Otras apps siguen usando el motor nativo descrito abajo. Los controles locales nuevos no se anuncian como disponibles para otras apps. Si ambas rutas están activas, los parámetros compartidos también se envían al efecto externo, que aplica sus límites propios.
+
+Este es un algoritmo propio; no se promete equivalencia con Fruity Reeverb 2. La cifra de 40 ms del canal de controles no mide la latencia de audio. Las pruebas de señales del DSP se encuentran en `native_tests`; las pruebas de decodificación y reproducción reales están en `android/app/src/androidTest`.
+
+## Motor Android para otras apps (desde 1.1.0)
+
 La versión 1.1.0 amplía la reverberación para escuchar otras apps, como YouTube Music, manteniendo el motor nativo Android. Es una implementación propia de controles de estudio; no contiene ni reproduce el algoritmo de Fruity Reeverb 2 y no garantiza su sonido o eficiencia.
 
 Referencia funcional consultada: [manual de Fruity Reeverb 2](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/plugins/Fruity%20Reeverb%202.htm). Los rangos y la aplicación en Android siguen [EnvironmentalReverb](https://developer.android.com/reference/android/media/audiofx/EnvironmentalReverb).
@@ -47,4 +75,4 @@ Los diagnósticos incluyen los valores reales y `propertyWrites`, el número de 
 adb shell dumpsys activity service com.audiowav.audiowav/.AudioService
 ```
 
-En el reproductor propio se utiliza el mismo conjunto de parámetros con un efecto auxiliar conectado al `MediaPlayer`. En las otras apps se requiere una variante de inserción del dispositivo y una sesión detectable. Los ajustes anteriores se migran conservando el decaimiento de su ambiente y WET.
+Hasta la versión 1.1.0, el reproductor propio utilizaba un efecto auxiliar conectado al `MediaPlayer`. En 1.2.0 lo sustituye el DSP local descrito arriba. En las otras apps se sigue requiriendo una variante de inserción del dispositivo y una sesión detectable. Los ajustes anteriores se migran conservando el decaimiento de su ambiente y WET.

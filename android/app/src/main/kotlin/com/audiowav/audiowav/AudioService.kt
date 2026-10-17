@@ -13,7 +13,6 @@ import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.MediaPlayer
 import android.media.audiofx.AudioEffect
 import android.net.Uri
 import android.os.Build
@@ -44,11 +43,9 @@ class AudioService : Service() {
                 "reverb" to types.contains(AudioEffect.EFFECT_TYPE_PRESET_REVERB))
         }
     }
-    private var player: MediaPlayer? = null
+    private var player: PcmPlayer? = null
     private var prepared = false
     private var localRack: EffectRack? = null
-    private var reverb: InsertReverb? = null
-    private var reverbFailed = false
     private val externalRacks = mutableMapOf<Int, EffectRack>()
     private val announcedSessions = mutableSetOf<Int>()
     private var detectedSessions: Set<Int> = emptySet()
@@ -172,26 +169,29 @@ class AudioService : Service() {
         releasePlayer()
         title = name; error = null
         try {
-            val next = MediaPlayer()
+            val next = PcmPlayer(this, uri, attributes, mainHandler,
+                onReady = { ready ->
+                    if (ready === player) {
+                        prepared = true
+                        localRack = EffectRack(ready.audioSessionId).also { it.apply(settings) }
+                        applyPlayerSettings()
+                        if (audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) ready.start()
+                        else error = "Otra aplicación tiene prioridad de audio. Pulsa reproducir para intentarlo otra vez."
+                        updateNotification()
+                    }
+                },
+                onComplete = { ready ->
+                    if (ready === player && !ready.isPlaying) {
+                        resumeAfterFocus = false
+                        audioManager.abandonAudioFocusRequest(focusRequest)
+                        updateNotification()
+                    }
+                },
+                onError = { ready, message ->
+                    if (ready === player) { error = message; releasePlayer(); updateNotification() }
+                })
             player = next
-            next.setAudioAttributes(attributes)
-            next.setDataSource(this, uri)
-            next.setOnPreparedListener { ready ->
-                if (ready !== player) return@setOnPreparedListener
-                prepared = true
-                localRack = EffectRack(ready.audioSessionId).also { it.apply(settings) }
-                reverbFailed = false
-                reverb = runCatching { InsertReverb(0, requireInsert = false).also { it.attachTo(ready) } }.getOrElse { reverbFailed = true; null }
-                applyPlayerSettings()
-                if (audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) ready.start()
-                else error = "Otra aplicación tiene prioridad de audio. Pulsa reproducir para intentarlo otra vez."
-                updateNotification()
-            }
-            next.setOnCompletionListener { resumeAfterFocus = false; audioManager.abandonAudioFocusRequest(focusRequest); updateNotification() }
-            next.setOnErrorListener { _, _, _ ->
-                error = "No se pudo reproducir este archivo. Prueba otro formato de audio."
-                releasePlayer(); updateNotification(); true
-            }
+            next.configure(DspSettings.from(settings), 0f, 1f)
             next.prepareAsync()
         } catch (_: Exception) { error = "No se pudo abrir el archivo de audio."; releasePlayer() }
         updateNotification()
@@ -202,8 +202,7 @@ class AudioService : Service() {
         val enabled = settings.optBoolean("enabled", false)
         val pan = if (enabled) settings.optDouble("balance", 0.0).coerceIn(-1.0, 1.0).toFloat() else 0f
         val duck = if (ducked) 0.2f else 1f
-        player?.setVolume((if (pan > 0) 1 - pan else 1f) * duck, (if (pan < 0) 1 + pan else 1f) * duck)
-        reverb?.apply(settings)
+        player?.configure(DspSettings.from(settings), pan, duck)
     }
 
     fun togglePlayback() {
@@ -219,16 +218,20 @@ class AudioService : Service() {
     fun snapshot(): Map<String, Any?> {
         val racks = listOfNotNull(localRack) + externalRacks.values
         val available = listOf("equalizer", "bass", "gain", "reverb").associateWith { name -> racks.any { it.capabilities()[name] == true } }.toMutableMap()
-        if (prepared) available["reverb"] = available["reverb"] == true || (!reverbFailed && reverb?.available() == true)
-        val support = externalRacks.values.map { it.reverbControls() } + listOfNotNull(reverb?.controlSupport())
+        if (prepared) available["reverb"] = true
+        val support = externalRacks.values.map { it.reverbControls() }
         val reverbControls = support.flatMap { it.keys }.distinct().associateWith { key -> support.any { it[key] == true } }
+        val localControls = listOf("decay", "preDelay", "size", "diffusion", "hfRatio", "hfLevel", "earlyLevel", "earlyDelay", "wet", "dry", "lowCut", "highCut", "width").associateWith { true }
         return mapOf("running" to true, "hasTrack" to prepared, "playing" to (prepared && player?.isPlaying == true),
             "position" to (if (prepared) player?.currentPosition else 0), "duration" to (if (prepared) player?.duration else 0),
             "title" to title, "sessions" to externalRacks.size, "capabilities" to available, "error" to error,
             "advancedDetection" to advancedDetection(), "detectionError" to detectionError,
-            "reverbControls" to reverbControls,
-            "reverbMaxDecayMs" to (externalRacks.values.mapNotNull { it.maximumReverbDecayMs() } + listOfNotNull(reverb?.maximumDecayMs())).minOrNull(),
-            "reverbError" to externalRacks.values.mapNotNull { it.reverbError() }.firstOrNull())
+            "localDsp" to prepared, "tail" to (player?.tail == true),
+            "localSampleRate" to player?.sampleRate,
+            "reverbControls" to (if (prepared) localControls else reverbControls),
+            "reverbMaxDecayMs" to (if (prepared) 20000 else externalRacks.values.mapNotNull { it.maximumReverbDecayMs() }.minOrNull()),
+            "externalReverbMaxDecayMs" to externalRacks.values.mapNotNull { it.maximumReverbDecayMs() }.minOrNull(),
+            "reverbError" to (if (prepared) null else externalRacks.values.mapNotNull { it.reverbError() }.firstOrNull()))
     }
 
     private fun notification(): Notification {
@@ -247,7 +250,6 @@ class AudioService : Service() {
         prepared = false; resumeAfterFocus = false; ducked = false
         player?.release(); player = null
         localRack?.release(); localRack = null
-        runCatching { reverb?.release() }; reverb = null
         audioManager.abandonAudioFocusRequest(focusRequest)
     }
     override fun onDestroy() {
@@ -269,7 +271,7 @@ class AudioService : Service() {
         writer.println("advancedDetection=${advancedDetection()} detectionError=$detectionError")
         writer.println("settings=$settings")
         writer.println("local=${localRack?.diagnostics()}")
-        writer.println("localReverb=${reverb?.diagnostics()}")
+        writer.println("localDsp=${prepared} sampleRate=${player?.sampleRate} processedFrames=${player?.processedFrames} maxProcessMicros=${player?.maxProcessMicros} underruns=${player?.underruns} tail=${player?.tail}")
         externalRacks.forEach { (session, rack) -> writer.println("session=$session actual=${rack.diagnostics()}") }
     }
 }

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(audiowav_dsp_checks LANGUAGES CXX)
+enable_testing()
+add_executable(reverb_test reverb_test.cpp ../android/app/src/main/cpp/reverb.cpp)
+target_include_directories(reverb_test PRIVATE ../android/app/src/main/cpp)
+target_compile_features(reverb_test PRIVATE cxx_std_17)
+add_test(NAME dsp_signal_checks COMMAND reverb_test)

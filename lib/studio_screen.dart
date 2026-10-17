@@ -423,9 +423,11 @@ class _StudioScreenState extends State<StudioScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 3),
-                                const Text(
-                                  'REPRODUCTOR LOCAL',
-                                  style: TextStyle(
+                                Text(
+                                  audio.state['tail'] == true
+                                      ? 'REPRODUCIENDO COLA DE REVERB'
+                                      : 'REPRODUCTOR LOCAL · DSP',
+                                  style: const TextStyle(
                                     color: _muted,
                                     fontSize: 9,
                                     letterSpacing: 1.3,
@@ -636,7 +638,7 @@ class _StudioScreenState extends State<StudioScreen> {
             ),
             SizedBox(height: 16),
             Text(
-              'Audiowav usa los efectos de Android. El ecualizador adapta sus 5 controles a las bandas del dispositivo.\n\nLa detección avanzada encuentra sesiones de otras apps con el permiso de diagnóstico DUMP, habilitado por USB. La reverberación externa depende de un efecto de inserción del fabricante; si Android no permite usarlo, se muestra como no disponible. El balance funciona con los archivos abiertos aquí.\n\nLa ganancia aumenta el nivel de la señal; la potencia máxima depende del equipo. Usa un volumen cómodo y evita la distorsión.',
+              'Los archivos abiertos en Audiowav pasan por un motor propio de reverberación estéreo con filtros, predelay, primeras reflexiones, difusión y mezcla DRY/WET. El ecualizador, los graves y la ganancia usan los efectos disponibles en Android.\n\nLa detección avanzada encuentra sesiones de otras apps con el permiso de diagnóstico DUMP, habilitado por USB. La reverberación externa depende de un efecto de inserción del fabricante; si Android no permite usarlo, se muestra como no disponible. El balance funciona con los archivos abiertos aquí.\n\nLa ganancia aumenta el nivel de la señal; la potencia máxima depende del equipo. Usa un volumen cómodo y evita la distorsión.',
               style: TextStyle(color: _muted, height: 1.6),
             ),
           ],

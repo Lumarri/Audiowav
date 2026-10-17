@@ -15,8 +15,12 @@ android {
     }
 
     defaultConfig {
+        externalNativeBuild {
+            cmake { cppFlags += "-std=c++17" }
+        }
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.audiowav.audiowav"
+        testInstrumentationRunner = "com.audiowav.audiowav.DspInstrumentation"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26
@@ -27,6 +31,13 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {

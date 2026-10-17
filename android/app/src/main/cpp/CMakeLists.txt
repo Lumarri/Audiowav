@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22)
+project(audiowav_dsp LANGUAGES CXX)
+add_library(audiowav_dsp SHARED reverb.cpp jni.cpp)
+target_compile_features(audiowav_dsp PRIVATE cxx_std_17)
+target_compile_options(audiowav_dsp PRIVATE -Wall -Wextra -O2)

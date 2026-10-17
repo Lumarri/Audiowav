@@ -19,6 +19,9 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test
+      - run: cmake -S native_tests -B build/native-tests -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build/native-tests
+      - run: ctest --test-dir build/native-tests --output-on-failure
       - run: flutter build apk --debug
       - run: bash ./gradlew testDebugUnitTest
         working-directory: android

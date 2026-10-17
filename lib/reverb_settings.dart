@@ -8,6 +8,10 @@ class ReverbParameters {
     this.hfLevel = -6,
     this.earlyLevel = .25,
     this.earlyDelay = 7,
+    this.dry = 1,
+    this.lowCut = 20,
+    this.highCut = 18000,
+    this.width = 1,
   });
   double decay,
       preDelay,
@@ -16,7 +20,11 @@ class ReverbParameters {
       hfRatio,
       hfLevel,
       earlyLevel,
-      earlyDelay;
+      earlyDelay,
+      dry,
+      lowCut,
+      highCut,
+      width;
 
   factory ReverbParameters.legacy(int mode) => ReverbParameters(
     decay: [1.4, .4, .85, 1.4, 1.8, 3.2, 2.2][mode.clamp(0, 6)],
@@ -44,6 +52,10 @@ class ReverbParameters {
     p.hfLevel = value('hfLevel', p.hfLevel, -90, 0);
     p.earlyLevel = value('earlyLevel', p.earlyLevel, 0, 1);
     p.earlyDelay = value('earlyDelay', p.earlyDelay, 0, 300);
+    p.dry = value('dry', p.dry, 0, 1);
+    p.lowCut = value('lowCut', p.lowCut, 20, 2000);
+    p.highCut = value('highCut', p.highCut, 2000, 20000);
+    p.width = value('width', p.width, 0, 2);
     return p;
   }
   Map<String, double> toMap() => {
@@ -55,6 +67,10 @@ class ReverbParameters {
     'hfLevel': hfLevel,
     'earlyLevel': earlyLevel,
     'earlyDelay': earlyDelay,
+    'dry': dry,
+    'lowCut': lowCut,
+    'highCut': highCut,
+    'width': width,
   };
 }
 

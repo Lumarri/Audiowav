@@ -115,4 +115,39 @@ void main() {
     expect(controller.settings.reverbParams.decay, 7);
     expect(controller.reverbControlAvailable('decay'), true);
   });
+
+  test('local DSP exposes controls without claiming them for other apps', () {
+    controller.state = {
+      'capabilities': {'reverb': true},
+      'reverbMaxDecayMs': 7000,
+    };
+    expect(controller.reverbControlAvailable('dry'), false);
+    expect(controller.reverbControlAvailable('lowCut'), false);
+    controller.state = {
+      'localDsp': true,
+      'capabilities': {'reverb': true},
+      'reverbMaxDecayMs': 20000,
+      'externalReverbMaxDecayMs': 7000,
+    };
+    expect(controller.reverbControlAvailable('dry'), true);
+    expect(controller.maxReverbDecay, 20);
+    controller.state['localSampleRate'] = 16000;
+    expect(controller.maxReverbHighCut, 7200);
+  });
+
+  test('DSP controls survive preset storage and old settings migration', () {
+    final settings = AudioSettings()..restore({});
+    expect(settings.reverbParams.dry, 1);
+    expect(settings.reverbParams.lowCut, 20);
+    expect(settings.reverbParams.highCut, 18000);
+    expect(settings.reverbParams.width, 1);
+    settings.restore({
+      'reverbParams': {'dry': .4, 'lowCut': 140, 'highCut': 8500, 'width': 1.5},
+    });
+    final copy = AudioSettings()..restore(settings.toMap());
+    expect(copy.reverbParams.dry, .4);
+    expect(copy.reverbParams.lowCut, 140);
+    expect(copy.reverbParams.highCut, 8500);
+    expect(copy.reverbParams.width, 1.5);
+  });
 }

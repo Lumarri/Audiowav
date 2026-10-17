@@ -62,6 +62,21 @@ class ReverbPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
+        Text(
+          audio.localDsp
+              ? 'DSP propio · Archivo local · ${((audio.state['localSampleRate'] as num? ?? 48000) / 1000).toStringAsFixed(1)} kHz'
+              : 'Motor Android · Audio de otras apps',
+          style: const TextStyle(color: _accent, fontSize: 11),
+        ),
+        if (audio.localDsp)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'Estos controles procesan el archivo abierto aquí. Otras apps mantienen los efectos disponibles en Android.',
+              style: TextStyle(color: _muted, fontSize: 10, height: 1.5),
+            ),
+          ),
+        const SizedBox(height: 14),
         Row(
           children: [
             Expanded(
@@ -213,8 +228,10 @@ class ReverbPanel extends StatelessWidget {
                 ),
                 dial(
                   'preDelay',
-                  'LATE DEL',
-                  'Retraso de la cola respecto a las primeras reflexiones. Máximo Android: 100 ms.',
+                  audio.localDsp ? 'PRE DEL' : 'LATE DEL',
+                  audio.localDsp
+                      ? 'Retardo antes del efecto, incluidas las primeras reflexiones'
+                      : 'Retraso de la cola respecto a las primeras reflexiones. Máximo Android: 100 ms.',
                   p.preDelay,
                   0,
                   100,
@@ -224,8 +241,10 @@ class ReverbPanel extends StatelessWidget {
                 ),
                 dial(
                   'size',
-                  'DENSITY',
-                  'Densidad modal del espacio. No equivale al tamaño físico de Fruity Reeverb 2.',
+                  audio.localDsp ? 'SIZE' : 'DENSITY',
+                  audio.localDsp
+                      ? 'Longitud de los retardos de la cola: de un espacio pequeño a uno amplio'
+                      : 'Densidad modal del espacio. No equivale al tamaño físico de Fruity Reeverb 2.',
                   p.size,
                   0,
                   100,
@@ -247,7 +266,9 @@ class ReverbPanel extends StatelessWidget {
                 dial(
                   'hfRatio',
                   'DAMP',
-                  'Tiempo de caída de los agudos respecto al resto. Menor que 1: cola más cálida.',
+                  audio.localDsp
+                      ? 'Decaimiento relativo de agudos en la realimentación, con transición alrededor de 4 kHz'
+                      : 'Tiempo de caída de los agudos respecto al resto. Menor que 1: cola más cálida.',
                   p.hfRatio,
                   .1,
                   2,
@@ -258,7 +279,9 @@ class ReverbPanel extends StatelessWidget {
                 dial(
                   'hfLevel',
                   'HF TONE',
-                  'Atenuación de agudos de la reverb a 5 kHz',
+                  audio.localDsp
+                      ? 'Nivel relativo de agudos en la entrada del efecto, sobre 4 kHz'
+                      : 'Atenuación de agudos de la reverb a 5 kHz',
                   p.hfLevel,
                   -90,
                   0,
@@ -288,6 +311,54 @@ class ReverbPanel extends StatelessWidget {
                   (v) => '${v.round()} ms',
                   (v) => edit((p) => p.earlyDelay = v),
                 ),
+                if (audio.localDsp) ...[
+                  dial(
+                    'dry',
+                    'DRY',
+                    'Nivel independiente de la señal original',
+                    p.dry,
+                    0,
+                    1,
+                    1,
+                    (v) => '${(v * 100).round()}%',
+                    (v) => edit((p) => p.dry = v),
+                  ),
+                  dial(
+                    'lowCut',
+                    'L.CUT',
+                    'Filtro de graves en la entrada de la reverberación',
+                    p.lowCut,
+                    20,
+                    2000,
+                    20,
+                    (v) => '${v.round()} Hz',
+                    (v) => edit((p) => p.lowCut = v),
+                    log: true,
+                  ),
+                  dial(
+                    'highCut',
+                    'H.CUT',
+                    'Filtro de agudos en la entrada de la reverberación',
+                    p.highCut.clamp(2000, audio.maxReverbHighCut),
+                    2000,
+                    audio.maxReverbHighCut,
+                    18000.clamp(2000, audio.maxReverbHighCut).toDouble(),
+                    (v) => '${(v / 1000).toStringAsFixed(1)} kHz',
+                    (v) => edit((p) => p.highCut = v),
+                    log: true,
+                  ),
+                  dial(
+                    'width',
+                    'WIDTH',
+                    'Anchura del efecto: 0% mono, 100% estéreo, 200% ampliado',
+                    p.width,
+                    0,
+                    2,
+                    1,
+                    (v) => '${(v * 100).round()}%',
+                    (v) => edit((p) => p.width = v),
+                  ),
+                ],
               ],
             );
           },
@@ -313,18 +384,19 @@ class ReverbPanel extends StatelessWidget {
               ? (v) => audio.editReverb((s) => s.wet = v)
               : null,
         ),
-        const Row(
-          children: [
-            Icon(Icons.lock_outline, size: 13, color: _muted),
-            SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                'DRY · Señal original fija en el motor de otras apps',
-                style: TextStyle(color: _muted, fontSize: 10),
+        if (!audio.localDsp)
+          const Row(
+            children: [
+              Icon(Icons.lock_outline, size: 13, color: _muted),
+              SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'DRY · Señal original fija en el motor de otras apps',
+                  style: TextStyle(color: _muted, fontSize: 10),
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         const SizedBox(height: 14),
         if (audio.maxReverbDecay < 20)
           Padding(

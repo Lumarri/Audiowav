@@ -5,6 +5,48 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('local DSP provides its own dry, filter and width controls', (
+    tester,
+  ) async {
+    const channel = MethodChannel('audiowav/dsp_panel_test');
+    final calls = <Map>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'configure') calls.add(call.arguments as Map);
+          return null;
+        });
+    final audio = AudioController(channel: channel, supported: true);
+    audio.state = {
+      'localDsp': true,
+      'capabilities': {'reverb': true},
+      'reverbMaxDecayMs': 20000,
+    };
+    audio.settings.enabled = true;
+    audio.settings.reverb = 3;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(child: ReverbPanel(audio: audio)),
+        ),
+      ),
+    );
+    final dials = tester.widgetList<ReverbDial>(find.byType(ReverbDial));
+    for (final label in ['DRY', 'L.CUT', 'H.CUT', 'WIDTH', 'PRE DEL', 'SIZE']) {
+      expect(
+        dials.singleWhere((dial) => dial.label == label).onChanged,
+        isNotNull,
+      );
+    }
+    dials.singleWhere((dial) => dial.label == 'DRY').onChanged!(.45);
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(calls.last['reverbParams']['dry'], .45);
+    expect(audio.saveReverbPreset('DSP local'), true);
+    expect(audio.settings.reverbUserPresets.single.parameters().dry, .45);
+    await tester.pumpWidget(const SizedBox());
+    audio.dispose();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
   testWidgets(
     'numeric decay edits reach Android and a personal preset can be saved',
     (tester) async {

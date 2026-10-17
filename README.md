@@ -1,13 +1,13 @@
 # Audiowav
 
-Estudio de audio móvil construido con Flutter y un motor nativo Kotlin para Android.
+Estudio de audio móvil construido con Flutter, Kotlin y un motor de reverberación C++ para Android.
 
 ## Funciones
 
 - Ecualizador de cinco controles (60 Hz, 230 Hz, 910 Hz, 3.6 kHz, 14 kHz), de −12 a +12 dB. Se interpolan en escala logarítmica a las bandas reales de Android.
 - Presets Plano, Potente, Rock, Voces, Electrónica y Acústico; ajuste personalizado.
 - Refuerzo de graves y ganancia de hasta +12 dB mediante los efectos nativos del dispositivo.
-- Reverb Studio: perillas de decaimiento, difusión, densidad, amortiguación, tono de agudos y reflexiones, con mezcla ajustable y presets personales. [Alcance y diferencias con Fruity Reeverb 2](docs/reverb-studio.md).
+- Reverb Studio: motor DSP estéreo propio para archivos locales, con decaimiento, predelay, tamaño, difusión, amortiguación, reflexiones, filtros L.CUT/H.CUT, anchura y niveles DRY/WET independientes. Incluye presets personales. [Alcance y diferencias con Fruity Reeverb 2](docs/reverb-studio.md).
 - Balance estéreo y control del volumen multimedia del teléfono.
 - Reproductor local: selección de archivos mediante el selector del sistema, reproducción, pausa y búsqueda.
 - Servicio en primer plano con notificación para reproducir en segundo plano y detener el motor.
@@ -20,7 +20,8 @@ Estudio de audio móvil construido con Flutter y un motor nativo Kotlin para And
 | Control | Archivos en Audiowav | Otras aplicaciones |
 | --- | --- | --- |
 | Ecualizador, graves y ganancia | Sí, si el dispositivo los admite | Sesiones compartidas o detección avanzada por DUMP |
-| Reverberación | Sí, si hay soporte de reverb | Requiere reverb de inserción del fabricante |
+| Reverberación | DSP propio C++, independiente de la reverb del fabricante | Requiere reverb de inserción del fabricante |
+| Filtros de reverb, DRY y anchura | Sí | No |
 | Balance | Sí | No |
 | Volumen multimedia | Volumen del sistema | Volumen del sistema |
 
@@ -40,7 +41,9 @@ adb shell pm grant com.audiowav.audiowav android.permission.DUMP
 adb shell pm revoke com.audiowav.audiowav android.permission.DUMP
 ```
 
-La reverb externa usa la API pública `EnvironmentalReverb` sobre cada sesión y verifica que Android haya seleccionado un efecto **de inserción**. Esto depende del fabricante. Si la creación, el modo de conexión o los parámetros fallan, la app informa que la reverberación externa no está disponible. La reverb local utiliza los mismos controles con un efecto ambiental auxiliar conectado al `MediaPlayer`.
+La reverb externa usa la API pública `EnvironmentalReverb` sobre cada sesión y verifica que Android haya seleccionado un efecto **de inserción**. Esto depende del fabricante. Si la creación, el modo de conexión o los parámetros fallan, la app informa que la reverberación externa no está disponible. Los archivos locales se decodifican con `MediaExtractor`/`MediaCodec`, pasan por el DSP propio y salen por `AudioTrack`. Los controles adicionales solo se habilitan para esa ruta.
+
+El reproductor admite archivos mono y estéreo que Android pueda extraer y decodificar a PCM de 16 bits o flotante, de 8 a 192 kHz. El audio multicanal y otros formatos PCM muestran un error explícito. La cola de reverb puede continuar tras terminar la canción; buscar otra posición borra los retardos. El DSP no contiene código ni algoritmos propietarios de Fruity Reeverb 2 y no se promete equivalencia sonora o de rendimiento.
 
 Los cambios de controles se envían durante el arrastre, con un intervalo de 40 ms entre envíos y conservación del último valor. No se utiliza la sesión global 0 para insertar efectos. No se captura ni graba audio.
 
@@ -50,7 +53,7 @@ El aumento de ganancia actúa sobre la señal, no aumenta la potencia física de
 
 ## Ejecutar
 
-Requisitos: Flutter estable con Dart 3.13.5 o posterior, SDK Android y JDK compatible con Gradle. Conecta un teléfono con depuración USB o inicia un emulador.
+Requisitos: Flutter estable con Dart 3.13.5 o posterior, SDK Android, NDK requerido por Flutter, CMake 3.22.1 y JDK compatible con Gradle. Conecta un teléfono con depuración USB o inicia un emulador.
 
 ```sh
 flutter pub get
@@ -71,6 +74,9 @@ Salida: `build/app/outputs/flutter-apk/app-debug.apk`. La firma de producción d
 dart format --output=none --set-exit-if-changed lib test
 flutter analyze
 flutter test
+cmake -S native_tests -B build/native-tests -DCMAKE_BUILD_TYPE=Release
+cmake --build build/native-tests
+ctest --test-dir build/native-tests --output-on-failure
 flutter build apk --debug
 ```
 
@@ -83,7 +89,9 @@ Consulta [la guía de pruebas en dispositivo](docs/device-testing.md) para verif
 - `lib/studio_screen.dart`: interfaz en español, con tema oscuro y controles accesibles.
 - `lib/audio_controller.dart`: estado, presets, comunicación con Android y agrupación de cambios del usuario.
 - `android/app/src/main/kotlin/com/audiowav/audiowav/MainActivity.kt`: canal `audiowav/audio` y selector de archivos.
-- `AudioService.kt`: reproducción, sesiones externas, notificación, foco de audio y reverberación auxiliar.
+- `AudioService.kt`: reproducción, sesiones externas, notificación y foco de audio.
+- `PcmPlayer.kt`: decodificación por bloques, salida PCM, pausa, búsqueda y cola.
+- `NativeReverb.kt` y `android/app/src/main/cpp`: puente JNI y DSP propio con una red de ocho retardos y mezcla Hadamard.
 - `EffectRack.kt`: efectos por sesión e interpolación del ecualizador.
 - `PlaybackSessions.kt`: parser de sesiones para detección avanzada; pruebas JVM en `android/app/src/test`.
 - `InsertReverb.kt`: adaptación opcional de la reverberación de inserción del fabricante.

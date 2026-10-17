@@ -82,6 +82,12 @@ class AudioController extends ChangeNotifier {
   bool get running => state['running'] == true;
   bool get playing => state['playing'] == true;
   bool get hasTrack => state['hasTrack'] == true;
+  bool get localDsp => state['localDsp'] == true;
+  double get maxReverbHighCut =>
+      ((state['localSampleRate'] as num? ?? 48000) * .45).toDouble().clamp(
+        2000,
+        20000,
+      );
   bool get advancedDetection => state['advancedDetection'] == true;
   double get maxReverbDecay =>
       ((state['reverbMaxDecayMs'] as num? ?? 20000).toDouble() / 1000).clamp(
@@ -96,7 +102,10 @@ class AudioController extends ChangeNotifier {
   bool available(String effect) =>
       supported && (state['capabilities'] as Map?)?[effect] == true;
   bool reverbControlAvailable(String name) =>
-      available('reverb') && (state['reverbControls'] as Map?)?[name] != false;
+      available('reverb') &&
+      (localDsp ||
+          !const {'dry', 'lowCut', 'highCut', 'width'}.contains(name)) &&
+      (state['reverbControls'] as Map?)?[name] != false;
 
   void selectReverbPreset(ReverbPreset preset, {bool userPreset = false}) =>
       update((s) {
