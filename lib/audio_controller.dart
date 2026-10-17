@@ -80,6 +80,11 @@ class AudioController extends ChangeNotifier {
   bool loading = true;
   String? error;
   bool? _localReverbView;
+  bool probePending = false;
+  Map get captureProbe => state['captureProbe'] as Map? ?? const {};
+  bool get captureActive => captureProbe['active'] == true;
+  List<Map> get captureTargets =>
+      (state['captureTargets'] as List? ?? const []).whereType<Map>().toList();
   bool get running => state['running'] == true;
   bool get playing => state['playing'] == true;
   bool get hasTrack => state['hasTrack'] == true;
@@ -261,6 +266,25 @@ class AudioController extends ChangeNotifier {
   Future<void> openFile() async {
     error = null;
     await _invoke('openFile');
+    await refresh();
+  }
+
+  Future<void> startCaptureProbe(String target) async {
+    if (probePending || captureActive || !supported) return;
+    probePending = true;
+    error = null;
+    _notify();
+    try {
+      await _invoke('startCaptureProbe', target);
+      await refresh();
+    } finally {
+      probePending = false;
+      _notify();
+    }
+  }
+
+  Future<void> stopCaptureProbe() async {
+    await _invoke('stopCaptureProbe');
     await refresh();
   }
 

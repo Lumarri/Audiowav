@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'audio_controller.dart';
+import 'capture_probe_panel.dart';
 import 'reverb_panel.dart';
 
 const _lime = Color(0xFFB8F76A), _muted = Color(0xFF96A0AE);
@@ -525,6 +526,7 @@ class _StudioScreenState extends State<StudioScreen> {
                 ],
                 if (audio.state['detectionError'] != null)
                   _notice(audio.state['detectionError'].toString()),
+                CaptureProbePanel(audio: audio),
                 const SizedBox(height: 28),
                 const Center(
                   child: Text(

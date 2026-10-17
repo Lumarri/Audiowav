@@ -19,6 +19,18 @@ Usar un teléfono físico y auriculares estéreo. Comenzar con volumen bajo. Un 
 
 Registrar modelo, versión Android, ruta de salida y efectos disponibles. El soporte de sesiones externas y de reverb debe validarse por dispositivo.
 
+## Prueba voluntaria de captura externa (1.3.0)
+
+La recepción de audio real de YouTube Music/Spotify/Deezer queda pendiente de que el usuario apruebe los diálogos Android. No se debe autorizar automáticamente con ADB ni pulsar los diálogos de consentimiento en su lugar. Las pruebas JVM verifican silencio, rechazo de un único clic y niveles/presencia de señal repetida; las pruebas Flutter verifican selección, inicio explícito y detención. Estas pruebas no demuestran compatibilidad con una fuente real.
+
+1. Abrir Audiowav por primera vez después de actualizar: no debe iniciarse captura ni aparecer un permiso sin pulsar **Probar 20 segundos**.
+2. Reproducir música en la app deseada, volver a Audiowav y elegir exactamente esa variante en **OTRAS APPS → Probar audio de otras apps**.
+3. Pulsar el botón y denegar el permiso de audio o cancelar el diálogo de proyección. Debe mostrarse cancelación y no quedar captura activa.
+4. Volver a probar y aprobar ambos diálogos personalmente. Debe aparecer la notificación de prueba, un medidor de pico y el tiempo transcurrido; no se debe escuchar una copia ni pausarse deliberadamente la fuente.
+5. Con sonido permitido debe detectarse señal en varios bloques. Con la fuente pausada o captura bloqueada, debe informar resultado inconcluso sin afirmar que la fuente está bloqueada de forma definitiva.
+6. Detener desde la app, desde la notificación y desde el control Android de proyección. Deben liberarse `AudioRecord` y el token, y retirarse la notificación. Esperar 20 segundos debe detener la prueba automáticamente.
+7. Repetir con cada app instalada y confirmar que cada prueba solicita un token nuevo. La autorización no se restaura al reabrir o reiniciar el teléfono. La interfaz debe seguir indicando que aún no se aplica el DSP externo.
+
 ## DSP local (1.2.0)
 
 1. Abrir un archivo mono o estéreo desde el reproductor. El panel debe indicar `DSP propio · Archivo local` y habilitar PRE DEL, SIZE, L.CUT, H.CUT, DRY y WIDTH.

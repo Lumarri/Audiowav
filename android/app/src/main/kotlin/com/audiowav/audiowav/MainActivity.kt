@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.projection.MediaProjectionManager
+import android.media.projection.MediaProjectionConfig
 import android.media.audiofx.AudioEffect
 import android.os.Build
 import android.os.Bundle
@@ -16,6 +18,8 @@ import org.json.JSONObject
 class MainActivity : FlutterActivity() {
     private var pickerResult: MethodChannel.Result? = null
     private var panelRequested = false
+    private var probeResult: MethodChannel.Result? = null
+    private var probeTarget: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         panelRequested = intent?.action == AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL
@@ -58,6 +62,11 @@ class MainActivity : FlutterActivity() {
                             result.success(snapshot())
                         }
                         "snapshot" -> result.success(snapshot())
+                        "startCaptureProbe" -> beginProbe(call.arguments as String, result)
+                        "stopCaptureProbe" -> {
+                            if (CaptureProbeService.busy()) startService(Intent(this, CaptureProbeService::class.java).setAction(CaptureProbeService.STOP))
+                            result.success(null)
+                        }
                         "configure" -> {
                             val config = JSONObject(call.arguments as Map<*, *>).toString()
                             getSharedPreferences("studio", MODE_PRIVATE).edit().putString("settings", config).apply()
@@ -88,7 +97,11 @@ class MainActivity : FlutterActivity() {
                             audio.setStreamVolume(AudioManager.STREAM_MUSIC, (value * audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)).toInt(), 0)
                             result.success(null)
                         }
-                        "stop" -> { stopService(Intent(this, AudioService::class.java)); result.success(null) }
+                        "stop" -> {
+                            stopService(Intent(this, AudioService::class.java))
+                            stopService(Intent(this, CaptureProbeService::class.java))
+                            result.success(null)
+                        }
                         else -> result.notImplemented()
                     }
                 } catch (error: Exception) {
@@ -105,6 +118,38 @@ class MainActivity : FlutterActivity() {
         startForegroundService(intent)
     }
 
+    private fun beginProbe(target: String, result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < 29) { result.error("UNSUPPORTED", "La prueba requiere Android 10 o posterior.", null); return }
+        if (probeResult != null || CaptureProbeService.busy()) { result.error("PROBE_BUSY", "Ya hay una prueba en curso.", null); return }
+        CaptureProbeService.targetUid(this, target)
+        probeResult = result; probeTarget = target
+        try {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 44)
+            } else requestProjection()
+        } catch (failure: Exception) { failProbe(failure.localizedMessage ?: "No se pudo solicitar la autorización.") }
+    }
+
+    private fun requestProjection() {
+        val manager = getSystemService(MediaProjectionManager::class.java)
+        val request = if (Build.VERSION.SDK_INT >= 34) manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+            else manager.createScreenCaptureIntent()
+        startActivityForResult(request, 45)
+    }
+
+    private fun failProbe(message: String) {
+        probeResult?.error("CAPTURE_PERMISSION", message, null)
+        probeResult = null; probeTarget = null
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 44 || probeResult == null) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            try { requestProjection() } catch (failure: Exception) { failProbe(failure.localizedMessage ?: "No se pudo pedir la captura.") }
+        } else failProbe("Prueba cancelada: no se autorizó el permiso de audio. Puedes intentarlo de nuevo cuando quieras.")
+    }
+
     private fun snapshot(): Map<String, Any?> {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
         val data = (AudioService.instance?.snapshot() ?: mapOf("running" to false,
@@ -113,6 +158,9 @@ class MainActivity : FlutterActivity() {
         data["volume"] = audio.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val saved = JSONObject(getSharedPreferences("studio", MODE_PRIVATE).getString("settings", "{}") ?: "{}")
         data["settings"] = channelValue(saved)
+        data["captureSupported"] = Build.VERSION.SDK_INT >= 29
+        data["captureProbe"] = if (Build.VERSION.SDK_INT >= 29) CaptureProbeService.snapshot() else mapOf("status" to "idle", "active" to false)
+        data["captureTargets"] = if (Build.VERSION.SDK_INT >= 29) CaptureProbeService.availableTargets(this) else emptyList<Map<String, String>>()
         return data
     }
 
@@ -126,6 +174,24 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Uses the platform document picker callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 45) {
+            val callback = probeResult
+            val target = probeTarget
+            probeResult = null; probeTarget = null
+            if (callback == null || target == null) return
+            if (resultCode != RESULT_OK || data == null) {
+                callback.error("CAPTURE_CANCELLED", "Prueba cancelada: Android no recibió autorización para capturar audio.", null)
+            } else {
+                try {
+                    startForegroundService(Intent(this, CaptureProbeService::class.java).apply {
+                        action = CaptureProbeService.START
+                        putExtra("target", target); putExtra("resultCode", resultCode); putExtra("token", data)
+                    })
+                    callback.success(null)
+                } catch (failure: Exception) { callback.error("CAPTURE_START", failure.localizedMessage, null) }
+            }
+            return
+        }
         if (requestCode != 42) return
         val callback = pickerResult
         pickerResult = null
@@ -147,6 +213,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        failProbe("La pantalla se cerró antes de iniciar la prueba.")
         pickerResult?.error("CANCELLED", "El selector se cerró.", null)
         pickerResult = null
         super.onDestroy()

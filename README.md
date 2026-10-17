@@ -45,7 +45,15 @@ La reverb externa usa la API pública `EnvironmentalReverb` sobre cada sesión y
 
 El reproductor admite archivos mono y estéreo que Android pueda extraer y decodificar a PCM de 16 bits o flotante, de 8 a 192 kHz. El audio multicanal y otros formatos PCM muestran un error explícito. La cola de reverb puede continuar tras terminar la canción; buscar otra posición borra los retardos. El DSP no contiene código ni algoritmos propietarios de Fruity Reeverb 2 y no se promete equivalencia sonora o de rendimiento.
 
-Los cambios de controles se envían durante el arrastre, con un intervalo de 40 ms entre envíos y conservación del último valor. No se utiliza la sesión global 0 para insertar efectos. No se captura ni graba audio.
+Los cambios de controles se envían durante el arrastre, con un intervalo de 40 ms entre envíos y conservación del último valor. No se utiliza la sesión global 0 para insertar efectos. El motor habitual no captura audio.
+
+### Prueba de audio interno (1.3.0, Android 10+)
+
+En **OTRAS APPS → Probar audio de otras apps**, elige la app que está reproduciendo música y pulsa **Probar 20 segundos**. Se muestran únicamente las variantes conocidas de YouTube Music, Spotify y Deezer instaladas para el usuario actual. Android pide `RECORD_AUDIO` y una autorización nueva de `MediaProjection` por prueba; no se conceden mediante ADB ni se reutiliza el token.
+
+Un servicio separado, visible con notificación y botón de detención, captura PCM únicamente del UID elegido mediante `AudioPlaybackCaptureConfiguration`. No se abre una entrada de micrófono, no se crea una captura de imágenes, no se guarda ni transmite el PCM y no se reproduce. Solo se conservan en memoria contadores y mediciones de pico/RMS. Se detiene a los 20 segundos, al pulsar detener o cuando Android revoca la proyección.
+
+Recibir señal durante al menos tres bloques confirma que llegó audio en esa ejecución. Un resultado silencioso es inconcluso: la fuente podría estar pausada, ser otra app o impedir la captura. **Esta prueba todavía no conecta el DSP a otras apps ni sustituye su salida original**; sirve para decidir si se puede avanzar con un retorno de reverb y evaluar su retardo. Más detalles y casos manuales en [la guía del dispositivo](docs/device-testing.md).
 
 El aumento de ganancia actúa sobre la señal, no aumenta la potencia física del altavoz ni elimina los límites de volumen de Android. La ganancia y los graves altos pueden distorsionar.
 
@@ -95,6 +103,7 @@ Consulta [la guía de pruebas en dispositivo](docs/device-testing.md) para verif
 - `EffectRack.kt`: efectos por sesión e interpolación del ecualizador.
 - `PlaybackSessions.kt`: parser de sesiones para detección avanzada; pruebas JVM en `android/app/src/test`.
 - `InsertReverb.kt`: adaptación opcional de la reverberación de inserción del fabricante.
+- `CaptureProbeService.kt` y `CaptureSignalMeter.kt`: prueba voluntaria de señal interna limitada a una app, sin grabación a disco ni salida de audio.
 
 La versión 1.0.1 se comprobó en un Moto g24 power con Android 14 sobre una sesión externa de RVX Music: ecualizador, graves, ganancia y reverb conectados simultáneamente, con lectura de sus parámetros reales. Detalles en la guía de pruebas.
 

@@ -4,7 +4,7 @@ La referencia compartida describe técnicas generales de reverberación: líneas
 
 ## Situación del proyecto
 
-Audiowav utiliza `EnvironmentalReverb` en `InsertReverb.kt`. Este efecto recibe parámetros; no permite sustituir su procesamiento por una función C++. El reproductor propio usa `MediaPlayer`, que tampoco entrega sus muestras al código de Audiowav.
+Audiowav utiliza `EnvironmentalReverb` en `InsertReverb.kt` para otras apps. Este efecto recibe parámetros; no permite sustituir su procesamiento por una función C++. Desde 1.2.0, el reproductor propio utiliza `PcmPlayer`, que entrega muestras al DSP C++.
 
 La detección de sesiones mediante DUMP permite conectar efectos disponibles en Android. Ese permiso no proporciona acceso a las muestras de audio ni autorización para capturarlas.
 
@@ -42,5 +42,7 @@ Una salida procesada de una copia añade latencia respecto al sonido original. H
 - En captura externa, comprobar primero que llegan muestras audibles de la app elegida, la revocación del permiso y la ausencia de realimentación.
 
 El usuario eligió implementar primero la ruta local. En 1.2.0 se incorpora un motor propio, sin copiar código de las alternativas citadas. `PcmPlayer` sustituye `MediaPlayer` para entregar bloques PCM al motor C++ y reproducir el resultado mediante `AudioTrack`. No se incorporan permisos ni funciones de captura de otras apps. La ruta de YouTube Music sigue pendiente y conserva los efectos Android existentes.
+
+En 1.3.0 se incorpora una prueba voluntaria de captura, limitada a 20 segundos y al UID de la app elegida. El usuario concede las autorizaciones en los diálogos Android. La prueba calcula nivel y presencia de señal sin conservar PCM, reproducirlo ni crear un display virtual. No aplica aún el DSP externo; falta comprobar señal real en el teléfono con autorización del usuario, y después evaluar una salida útil sin duplicación ni realimentación.
 
 Fuentes: [captura de reproducción en Android](https://developer.android.com/media/platform/av-capture), [EnvironmentalReverb](https://developer.android.com/reference/android/media/audiofx/EnvironmentalReverb) y [manual de Fruity Reeverb 2](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/plugins/Fruity%20Reeverb%202.htm).
