@@ -8,6 +8,8 @@ DRY requiere además controlar el original. Se filtran las sesiones de AudioFlin
 
 No se promete latencia ni sustitución del original en todos los dispositivos. La confirmación del permiso de Android debe hacerla el usuario. Referencias de las API públicas: [captura interna](https://developer.android.com/media/platform/av-capture), [DynamicsProcessing](https://developer.android.com/reference/android/media/audiofx/DynamicsProcessing).
 
+En 1.4.1 se usa la configuración predeterminada de DynamicsProcessing, compatible con el Moto g24 power donde la variante temporal había fallado. El usuario confirmó DRY habilitado con YouTube Music RVX; los diagnósticos verificaron captura con señal y control del original simultáneos, sin error de atenuación. Los doce controles de Reverb Studio quedaron disponibles. Las [mediciones](device-testing.md) registran el alcance de esa comprobación.
+
 ## Selección de fuente en la versión 1.2.1
 
 El panel permite elegir **Archivo local** u **Otras apps** para consultar los controles de cada motor, incluso con un archivo local cargado y pausado. Los doce controles permanecen visibles; los que la fuente no admite quedan deshabilitados. La selección cambia la vista de disponibilidad; los ajustes compatibles se comparten entre ambos motores.
