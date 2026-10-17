@@ -95,6 +95,26 @@ void main() {
     expect(calls, isEmpty);
     unsupported.dispose();
   });
+  test(
+    'opening a local file switches the view back from live external DSP',
+    () async {
+      controller.selectReverbSource(false);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'openFile') return true;
+            return {
+              'localDsp': true,
+              'hasTrack': true,
+              'localSampleRate': 16000,
+            };
+          });
+      await controller.openFile();
+      expect(controller.localReverbView, true);
+      expect(controller.maxReverbHighCut, 7200);
+      controller.selectReverbSource(false);
+      expect(controller.maxReverbHighCut, 20000);
+    },
+  );
   test('native decay limits adapt the dial without disabling it', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -149,6 +169,38 @@ void main() {
     expect(copy.reverbParams.lowCut, 140);
     expect(copy.reverbParams.highCut, 8500);
     expect(copy.reverbParams.width, 1.5);
+  });
+
+  test('live DSP requires actual signal and enables dry only when original control is confirmed', () {
+    controller.state = {
+      'captureProbe': {'mode': 'dsp', 'active': true, 'dspReady': false},
+      'externalCapabilities': {'reverb': false},
+    };
+    controller.selectReverbSource(false);
+    expect(controller.externalDspActive, false);
+    expect(controller.reverbControlAvailable('lowCut'), false);
+    controller.state['captureProbe'] = {
+      'mode': 'dsp',
+      'active': true,
+      'dspReady': true,
+      'originalMuted': false,
+    };
+    for (final name in [
+      'lowCut',
+      'highCut',
+      'width',
+      'earlyDelay',
+      'preDelay',
+    ]) {
+      expect(controller.reverbControlAvailable(name), true);
+    }
+    expect(controller.reverbControlAvailable('dry'), false);
+    expect(controller.maxReverbDecay, 20);
+    controller.state['captureProbe']['originalMuted'] = true;
+    expect(controller.reverbControlAvailable('dry'), true);
+    controller.state['captureProbe']['active'] = false;
+    expect(controller.reverbControlAvailable('dry'), false);
+    expect(controller.reverbControlAvailable('lowCut'), false);
   });
 
   test('external controls stay separate while a local file is loaded', () {

@@ -31,22 +31,32 @@ class _CaptureProbePanelState extends State<CaptureProbePanel> {
     final elapsed = (probe['elapsedMs'] as num? ?? 0).toDouble();
     final signal = probe['signalDetected'] == true;
     final status = probe['status'] as String? ?? 'idle';
-    final message = switch (status) {
-      'running' =>
-        signal
-            ? 'Está llegando audio de ${probe['label'] ?? 'la app elegida'}.'
-            : 'Escuchando la señal interna. Mantén una canción reproduciéndose.',
-      'signal' =>
-        'Se recibió audio de ${probe['label']}. Podemos evaluar el DSP externo con esta app.',
-      'no_signal' => 'No se confirmó señal. Comprueba que la app elegida estaba reproduciendo una canción. Si vuelve a fallar, puede estar bloqueando la captura.',
-      'revoked' => 'Android retiró la autorización. La prueba se detuvo.',
-      'stopped' =>
-        signal
-            ? 'Prueba detenida. Se recibió señal de ${probe['label']}.'
-            : 'Prueba detenida sin confirmar señal.',
-      'error' => probe['error'] as String? ?? 'No se pudo completar la prueba.',
-      _ => 'Primero verificaremos si podemos recibir el audio de tu app.',
-    };
+    final processing = probe['mode'] == 'dsp';
+    final message = processing && status == 'running'
+        ? (audio.externalDspActive
+              ? (audio.externalDryControl
+                    ? 'Reverb Studio en vivo: mezcla DRY/WET disponible.'
+                    : 'Reverb Studio en vivo: retorno WET. No se confirmó el control del original.')
+              : 'Conectando Reverb Studio. Mantén una canción reproduciéndose en la app elegida.')
+        : switch (status) {
+            'running' =>
+              signal
+                  ? 'Está llegando audio de ${probe['label'] ?? 'la app elegida'}.'
+                  : 'Escuchando la señal interna. Mantén una canción reproduciéndose.',
+            'signal' =>
+              'Se recibió audio de ${probe['label']}. Podemos evaluar el DSP externo con esta app.',
+            'no_signal' => 'No se confirmó señal. Comprueba que la app elegida estaba reproduciendo una canción. Si vuelve a fallar, puede estar bloqueando la captura.',
+            'revoked' => 'Android retiró la autorización. La prueba se detuvo.',
+            'stopped' =>
+              processing
+                  ? 'DSP en vivo detenido. Se restauró el sonido original.'
+                  : signal
+                  ? 'Prueba detenida. Se recibió señal de ${probe['label']}.'
+                  : 'Prueba detenida sin confirmar señal.',
+            'error' =>
+              probe['error'] as String? ?? 'No se pudo completar la prueba.',
+            _ => 'Primero verificaremos si podemos recibir el audio de tu app.',
+          };
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Card(
@@ -57,7 +67,7 @@ class _CaptureProbePanelState extends State<CaptureProbePanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Probar audio de otras apps',
+                'Audio de otras apps · DSP',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
               ),
               const SizedBox(height: 8),
@@ -99,10 +109,11 @@ class _CaptureProbePanelState extends State<CaptureProbePanel> {
               ),
               if (status != 'idle' && !audio.probePending) ...[
                 const SizedBox(height: 8),
-                LinearProgressIndicator(value: (elapsed / 20000).clamp(0, 1)),
+                if (!processing)
+                  LinearProgressIndicator(value: (elapsed / 20000).clamp(0, 1)),
                 const SizedBox(height: 6),
                 Text(
-                  '${(elapsed / 1000).floor()} / 20 s · Pico: ${(probe['peakDb'] as num? ?? -120).toStringAsFixed(1)} dBFS',
+                  '${(elapsed / 1000).floor()} ${processing ? 's · DSP' : '/ 20 s'} · Pico: ${(probe['peakDb'] as num? ?? -120).toStringAsFixed(1)} dBFS',
                   style: const TextStyle(fontSize: 11),
                 ),
               ],
@@ -111,7 +122,9 @@ class _CaptureProbePanelState extends State<CaptureProbePanel> {
                 OutlinedButton.icon(
                   onPressed: audio.stopCaptureProbe,
                   icon: const Icon(Icons.stop_rounded),
-                  label: const Text('Detener prueba'),
+                  label: Text(
+                    processing ? 'Detener DSP en vivo' : 'Detener prueba',
+                  ),
                 )
               else
                 FilledButton.icon(
@@ -121,9 +134,22 @@ class _CaptureProbePanelState extends State<CaptureProbePanel> {
                   icon: const Icon(Icons.hearing_rounded),
                   label: const Text('Probar 20 segundos'),
                 ),
+              if (!audio.captureActive)
+                OutlinedButton.icon(
+                  onPressed: busy || selected == null
+                      ? null
+                      : () => audio.startExternalDsp(selected),
+                  icon: const Icon(Icons.surround_sound_rounded),
+                  label: const Text('Activar Reverb Studio en vivo'),
+                ),
+              if (probe['muteError'] != null)
+                Text(
+                  probe['muteError'].toString(),
+                  style: const TextStyle(fontSize: 11),
+                ),
               const SizedBox(height: 8),
               const Text(
-                'Android pedirá permiso de audio y de compartir pantalla; aquí solo se usa audio interno. Esta prueba todavía no aplica efectos ni sustituye el sonido original.',
+                'Android pedirá autorización para cada inicio. Probar mide señal durante 20 segundos. Reverb Studio en vivo procesa y reproduce el audio hasta pulsar Detener; añade retardo y no guarda audio ni imágenes.',
                 style: TextStyle(fontSize: 11, height: 1.5),
               ),
             ],

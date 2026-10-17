@@ -83,8 +83,28 @@ class AudioController extends ChangeNotifier {
   bool probePending = false;
   Map get captureProbe => state['captureProbe'] as Map? ?? const {};
   bool get captureActive => captureProbe['active'] == true;
+  bool get externalDspActive =>
+      captureActive &&
+      captureProbe['mode'] == 'dsp' &&
+      captureProbe['dspReady'] == true;
+  bool get externalDryControl =>
+      externalDspActive && captureProbe['originalMuted'] == true;
+  bool get studioDsp => localReverbView || externalDspActive;
   List<Map> get captureTargets =>
       (state['captureTargets'] as List? ?? const []).whereType<Map>().toList();
+  Map? get preferredCaptureTarget {
+    final targets = captureTargets;
+    for (final id in [
+      captureProbe['target'],
+      'app.rvx.android.apps.youtube.music',
+    ]) {
+      for (final target in targets) {
+        if (target['id'] == id) return target;
+      }
+    }
+    return targets.firstOrNull;
+  }
+
   bool get running => state['running'] == true;
   bool get playing => state['playing'] == true;
   bool get hasTrack => state['hasTrack'] == true;
@@ -99,13 +119,13 @@ class AudioController extends ChangeNotifier {
   }
 
   double get maxReverbHighCut =>
-      ((state['localSampleRate'] as num? ?? 48000) * .45).toDouble().clamp(
-        2000,
-        20000,
-      );
+      ((localReverbView ? state['localSampleRate'] as num? ?? 48000 : 48000) *
+              .45)
+          .toDouble()
+          .clamp(2000, 20000);
   bool get advancedDetection => state['advancedDetection'] == true;
   double get maxReverbDecay =>
-      ((localReverbView
+      ((studioDsp
                       ? 20000
                       : state['externalReverbMaxDecayMs'] as num? ??
                             state['reverbMaxDecayMs'] as num? ??
@@ -120,6 +140,10 @@ class AudioController extends ChangeNotifier {
   double get volume => (state['volume'] as num? ?? .5).toDouble();
   bool available(String effect) {
     if (!supported) return false;
+    if (externalDspActive && !localReverbView) {
+      if (effect == 'reverb') return true;
+      return (captureProbe['outputCapabilities'] as Map?)?[effect] == true;
+    }
     if (effect == 'reverb') {
       if (localReverbView) return localDsp;
       final external = state['externalCapabilities'] as Map?;
@@ -129,13 +153,15 @@ class AudioController extends ChangeNotifier {
   }
 
   bool reverbControlAvailable(String name) =>
-      available('reverb') &&
-      (localReverbView ||
-          !const {'dry', 'lowCut', 'highCut', 'width'}.contains(name)) &&
-      (localReverbView ||
-          ((state['externalReverbControls'] ?? state['reverbControls'])
-                  as Map?)?[name] !=
-              false);
+      externalDspActive && !localReverbView
+      ? name != 'dry' || externalDryControl
+      : available('reverb') &&
+            (localReverbView ||
+                !const {'dry', 'lowCut', 'highCut', 'width'}.contains(name)) &&
+            (localReverbView ||
+                ((state['externalReverbControls'] ?? state['reverbControls'])
+                        as Map?)?[name] !=
+                    false);
 
   void selectReverbPreset(ReverbPreset preset, {bool userPreset = false}) =>
       update((s) {
@@ -265,7 +291,7 @@ class AudioController extends ChangeNotifier {
   });
   Future<void> openFile() async {
     error = null;
-    await _invoke('openFile');
+    if (await _invoke<bool>('openFile') == true) _localReverbView = true;
     await refresh();
   }
 
@@ -286,6 +312,21 @@ class AudioController extends ChangeNotifier {
   Future<void> stopCaptureProbe() async {
     await _invoke('stopCaptureProbe');
     await refresh();
+  }
+
+  Future<void> startExternalDsp(String target) async {
+    if (probePending || captureActive || !supported) return;
+    probePending = true;
+    error = null;
+    _localReverbView = false;
+    _notify();
+    try {
+      await _invoke('startExternalDsp', target);
+      await refresh();
+    } finally {
+      probePending = false;
+      _notify();
+    }
   }
 
   Future<void> togglePlayback() async {

@@ -23,7 +23,7 @@ class EffectRack(session: Int, external: Boolean = false) {
     private var bassSignature: String? = null
     private var gainSignature: String? = null
 
-    fun apply(settings: JSONObject) {
+    fun apply(settings: JSONObject, reverbAllowed: Boolean = true) {
         val enabled = settings.optBoolean("enabled", false)
         val eqKey = "$enabled:${settings.optJSONArray("bands") ?: "[]"}"
         val bassKey = "$enabled:${settings.optDouble("bass", 0.0)}"
@@ -58,7 +58,7 @@ class EffectRack(session: Int, external: Boolean = false) {
                 gainSignature = gainKey
             }
         }.isFailure
-        insertReverb?.apply(settings)
+        insertReverb?.apply(if (reverbAllowed) settings else JSONObject(settings.toString()).put("reverb", 0))
     }
 
     private fun interpolate(frequency: Double, levels: DoubleArray): Double {

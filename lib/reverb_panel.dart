@@ -16,7 +16,13 @@ class ReverbPanel extends StatelessWidget {
     final s = audio.settings;
     final p = s.reverbParams;
     final available = audio.available('reverb');
-    final reverbError = audio.localReverbView
+    final reverbError =
+        audio.captureProbe['mode'] == 'dsp' &&
+            audio.captureProbe['error'] != null
+        ? audio.captureProbe['error']
+        : audio.externalDspActive
+        ? audio.captureProbe['error']
+        : audio.localReverbView
         ? null
         : audio.state['externalReverbError'] ?? audio.state['reverbError'];
     final active = available && s.reverb != 0;
@@ -86,6 +92,8 @@ class ReverbPanel extends StatelessWidget {
               ? (audio.localDsp
                     ? 'DSP propio · Archivo local · ${((audio.state['localSampleRate'] as num? ?? 48000) / 1000).toStringAsFixed(1)} kHz'
                     : 'DSP propio · Sin archivo cargado')
+              : audio.externalDspActive
+              ? 'DSP propio · ${audio.captureProbe['label']} · En vivo'
               : 'Motor Android · Audio de otras apps',
           style: const TextStyle(color: _accent, fontSize: 11),
         ),
@@ -94,10 +102,40 @@ class ReverbPanel extends StatelessWidget {
           child: Text(
             audio.localReverbView
                 ? 'El DSP procesa el archivo abierto aquí. Para escuchar YouTube Music, selecciona Otras apps.'
-                : 'YouTube Music usa la reverb de Android. DRY, L.CUT, H.CUT y WIDTH requieren un archivo local. Los ajustes compatibles se comparten entre ambos motores.',
+                : audio.externalDspActive
+                ? (audio.externalDryControl
+                      ? 'El audio de la app pasa por el DSP propio. DRY y WET controlan la mezcla procesada. Esta ruta añade retardo.'
+                      : 'El DSP añade solo reverberación al sonido original. DRY queda fijo porque no se confirmó el control del original. Esta ruta añade retardo.')
+                : 'Está activo el motor limitado de Android. Activa Reverb Studio en vivo para enviar el audio al DSP propio.',
             style: const TextStyle(color: _muted, fontSize: 10, height: 1.5),
           ),
         ),
+        if (!audio.localReverbView && audio.state['captureSupported'] == true)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: audio.externalDspActive
+                ? OutlinedButton.icon(
+                    onPressed: audio.stopCaptureProbe,
+                    icon: const Icon(Icons.stop_rounded),
+                    label: const Text('Detener DSP en vivo'),
+                  )
+                : FilledButton.tonalIcon(
+                    onPressed:
+                        audio.probePending ||
+                            audio.captureActive ||
+                            audio.preferredCaptureTarget == null
+                        ? null
+                        : () => audio.startExternalDsp(
+                            audio.preferredCaptureTarget!['id'] as String,
+                          ),
+                    icon: const Icon(Icons.surround_sound_rounded),
+                    label: Text(
+                      audio.probePending
+                          ? 'Esperando autorización de Android…'
+                          : 'Activar DSP · ${audio.preferredCaptureTarget?['label'] ?? 'Elige una app abajo'}',
+                    ),
+                  ),
+          ),
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
@@ -257,8 +295,8 @@ class ReverbPanel extends StatelessWidget {
                 ),
                 dial(
                   'preDelay',
-                  audio.localReverbView ? 'PRE DEL' : 'LATE DEL',
-                  audio.localReverbView
+                  audio.studioDsp ? 'PRE DEL' : 'LATE DEL',
+                  audio.studioDsp
                       ? 'Retardo antes del efecto, incluidas las primeras reflexiones'
                       : 'Retraso de la cola respecto a las primeras reflexiones. Máximo Android: 100 ms.',
                   p.preDelay,
@@ -270,8 +308,8 @@ class ReverbPanel extends StatelessWidget {
                 ),
                 dial(
                   'size',
-                  audio.localReverbView ? 'SIZE' : 'DENSITY',
-                  audio.localReverbView
+                  audio.studioDsp ? 'SIZE' : 'DENSITY',
+                  audio.studioDsp
                       ? 'Longitud de los retardos de la cola: de un espacio pequeño a uno amplio'
                       : 'Densidad modal del espacio. No equivale al tamaño físico de Fruity Reeverb 2.',
                   p.size,
@@ -295,7 +333,7 @@ class ReverbPanel extends StatelessWidget {
                 dial(
                   'hfRatio',
                   'DAMP',
-                  audio.localReverbView
+                  audio.studioDsp
                       ? 'Decaimiento relativo de agudos en la realimentación, con transición alrededor de 4 kHz'
                       : 'Tiempo de caída de los agudos respecto al resto. Menor que 1: cola más cálida.',
                   p.hfRatio,
@@ -308,7 +346,7 @@ class ReverbPanel extends StatelessWidget {
                 dial(
                   'hfLevel',
                   'HF TONE',
-                  audio.localReverbView
+                  audio.studioDsp
                       ? 'Nivel relativo de agudos en la entrada del efecto, sobre 4 kHz'
                       : 'Atenuación de agudos de la reverb a 5 kHz',
                   p.hfLevel,
@@ -411,14 +449,14 @@ class ReverbPanel extends StatelessWidget {
               ? (v) => audio.editReverb((s) => s.wet = v)
               : null,
         ),
-        if (!audio.localReverbView)
+        if (!audio.localReverbView && !audio.externalDryControl)
           const Row(
             children: [
               Icon(Icons.lock_outline, size: 13, color: _muted),
               SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'DRY · Señal original fija en el motor de otras apps',
+                  'DRY · No se confirmó el control del sonido original',
                   style: TextStyle(color: _muted, fontSize: 10),
                 ),
               ),
@@ -441,7 +479,7 @@ class ReverbPanel extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.only(top: 12),
             child: Text(
-              'Archivo local: abre una canción aquí. Otras apps: activa el motor y reproduce música para conectar la reverb de Android.',
+              'Archivo local: abre una canción aquí. Otras apps: reproduce música y pulsa Activar DSP para usar Reverb Studio en vivo.',
               style: TextStyle(color: _muted, fontSize: 11),
             ),
           ),
@@ -464,7 +502,7 @@ class ReverbPanel extends StatelessWidget {
           ),
           children: [
             Text(
-              'Usa el motor de Android, con controles inspirados en un estudio de reverb. Los controles que el dispositivo no confirma se deshabilitan.\n\nNo incluye los algoritmos de Fruity Reeverb 2 ni sus filtros H.CUT/L.CUT, modulación, BASS/CROSS, MID/SIDE, separación estéreo o mezcla DRY independiente. DENSITY y LATE DEL conservan el significado de sus parámetros Android.',
+              'Activar DSP conecta el audio autorizado de la app elegida a nuestro motor de reverb: filtros L.CUT/H.CUT, predelay, reflexiones, difusión, anchura y WET. DRY requiere confirmar el control del original. La captura añade retardo.\n\nSin DSP en vivo, se usa la reverb de Android y sus límites. Los controles sin soporte aparecen deshabilitados. No incluye el algoritmo propietario de Fruity Reeverb 2, modulación, BASS/CROSS, MID/SIDE ni sincronización a tempo.',
               style: TextStyle(color: _muted, fontSize: 11, height: 1.5),
             ),
           ],
@@ -474,6 +512,14 @@ class ReverbPanel extends StatelessWidget {
   }
 
   String _status(AudioController audio, bool available) {
+    if (!audio.localReverbView && audio.captureProbe['mode'] == 'dsp') {
+      if (audio.captureProbe['status'] == 'error') {
+        return 'No se pudo mantener el DSP en vivo: ${audio.captureProbe['error'] ?? 'vuelve a iniciarlo con música reproduciéndose.'}';
+      }
+      if (audio.captureActive && !audio.externalDspActive) {
+        return 'Conectando el DSP. Los controles se habilitan al recibir señal y preparar la salida.';
+      }
+    }
     if (audio.localReverbView && !audio.localDsp) {
       return 'Abre un archivo de audio para usar estos controles.';
     }
@@ -486,6 +532,11 @@ class ReverbPanel extends StatelessWidget {
     }
     if (audio.settings.wet == 0) {
       return 'WET está en 0%: la reverb no se escucha.';
+    }
+    if (audio.externalDspActive) {
+      return audio.externalDryControl
+          ? 'Reverb DSP en vivo · Mezcla DRY/WET disponible.'
+          : 'Reverb DSP en vivo · Retorno WET sobre el original.';
     }
     if (audio.localReverbView) {
       return audio.playing

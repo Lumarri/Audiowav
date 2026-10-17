@@ -38,7 +38,7 @@
             </intent-filter>
         </activity>
         <service android:name=".AudioService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
-        <service android:name=".CaptureProbeService" android:exported="false" android:foregroundServiceType="mediaProjection" />
+        <service android:name=".CaptureProbeService" android:exported="false" android:foregroundServiceType="mediaProjection|mediaPlayback" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

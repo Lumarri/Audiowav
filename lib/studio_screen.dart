@@ -365,7 +365,7 @@ class _StudioScreenState extends State<StudioScreen> {
                         s.balance,
                         -1,
                         1,
-                        canEdit && audio.hasTrack
+                        canEdit && (audio.hasTrack || audio.externalDspActive)
                             ? (v) => audio.update((s) => s.balance = v)
                             : null,
                       ),
@@ -640,7 +640,7 @@ class _StudioScreenState extends State<StudioScreen> {
             ),
             SizedBox(height: 16),
             Text(
-              'Los archivos abiertos en Audiowav pasan por un motor propio de reverberación estéreo con filtros, predelay, primeras reflexiones, difusión y mezcla DRY/WET. El ecualizador, los graves y la ganancia usan los efectos disponibles en Android.\n\nLa detección avanzada encuentra sesiones de otras apps con el permiso de diagnóstico DUMP, habilitado por USB. La reverberación externa depende de un efecto de inserción del fabricante; si Android no permite usarlo, se muestra como no disponible. El balance funciona con los archivos abiertos aquí.\n\nLa ganancia aumenta el nivel de la señal; la potencia máxima depende del equipo. Usa un volumen cómodo y evita la distorsión.',
+              'Los archivos abiertos en Audiowav pasan por un motor propio de reverberación estéreo con filtros, predelay, primeras reflexiones, difusión y mezcla DRY/WET. El ecualizador, los graves y la ganancia usan los efectos disponibles en Android.\n\nEn Otras apps, Activar DSP solicita autorización de Android para procesar el audio de la app elegida con ese motor y balance. Añade retardo; DRY requiere controlar el original. La detección avanzada usa el permiso de diagnóstico DUMP, habilitado por USB. Sin DSP en vivo, la reverb externa depende del fabricante y los controles disponibles se reducen.\n\nLa ganancia aumenta el nivel de la señal; la potencia máxima depende del equipo. Usa un volumen cómodo y evita la distorsión.',
               style: TextStyle(color: _muted, height: 1.6),
             ),
           ],

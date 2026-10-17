@@ -20,6 +20,7 @@ class MainActivity : FlutterActivity() {
     private var panelRequested = false
     private var probeResult: MethodChannel.Result? = null
     private var probeTarget: String? = null
+    private var probeDsp = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         panelRequested = intent?.action == AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL
@@ -63,6 +64,7 @@ class MainActivity : FlutterActivity() {
                         }
                         "snapshot" -> result.success(snapshot())
                         "startCaptureProbe" -> beginProbe(call.arguments as String, result)
+                        "startExternalDsp" -> beginProbe(call.arguments as String, result, dsp = true)
                         "stopCaptureProbe" -> {
                             if (CaptureProbeService.busy()) startService(Intent(this, CaptureProbeService::class.java).setAction(CaptureProbeService.STOP))
                             result.success(null)
@@ -75,6 +77,7 @@ class MainActivity : FlutterActivity() {
                             } else if (JSONObject(config).optBoolean("enabled")) {
                                 startEngine(Intent(this, AudioService::class.java))
                             }
+                            if (Build.VERSION.SDK_INT >= 29) CaptureProbeService.configure()
                             result.success(null)
                         }
                         "openFile" -> {
@@ -118,11 +121,11 @@ class MainActivity : FlutterActivity() {
         startForegroundService(intent)
     }
 
-    private fun beginProbe(target: String, result: MethodChannel.Result) {
+    private fun beginProbe(target: String, result: MethodChannel.Result, dsp: Boolean = false) {
         if (Build.VERSION.SDK_INT < 29) { result.error("UNSUPPORTED", "La prueba requiere Android 10 o posterior.", null); return }
         if (probeResult != null || CaptureProbeService.busy()) { result.error("PROBE_BUSY", "Ya hay una prueba en curso.", null); return }
         CaptureProbeService.targetUid(this, target)
-        probeResult = result; probeTarget = target
+        probeResult = result; probeTarget = target; probeDsp = dsp
         try {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 44)
@@ -140,6 +143,7 @@ class MainActivity : FlutterActivity() {
     private fun failProbe(message: String) {
         probeResult?.error("CAPTURE_PERMISSION", message, null)
         probeResult = null; probeTarget = null
+        probeDsp = false
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -177,15 +181,23 @@ class MainActivity : FlutterActivity() {
         if (requestCode == 45) {
             val callback = probeResult
             val target = probeTarget
-            probeResult = null; probeTarget = null
+            val dsp = probeDsp
+            probeResult = null; probeTarget = null; probeDsp = false
             if (callback == null || target == null) return
             if (resultCode != RESULT_OK || data == null) {
                 callback.error("CAPTURE_CANCELLED", "Prueba cancelada: Android no recibió autorización para capturar audio.", null)
             } else {
                 try {
+                    if (dsp) {
+                        val prefs = getSharedPreferences("studio", MODE_PRIVATE)
+                        val settings = JSONObject(prefs.getString("settings", "{}") ?: "{}").put("enabled", true)
+                        prefs.edit().putString("settings", settings.toString()).apply()
+                        startEngine(Intent(this, AudioService::class.java))
+                    }
                     startForegroundService(Intent(this, CaptureProbeService::class.java).apply {
                         action = CaptureProbeService.START
                         putExtra("target", target); putExtra("resultCode", resultCode); putExtra("token", data)
+                        putExtra("dsp", dsp)
                     })
                     callback.success(null)
                 } catch (failure: Exception) { callback.error("CAPTURE_START", failure.localizedMessage, null) }
@@ -198,6 +210,7 @@ class MainActivity : FlutterActivity() {
         try {
             val uri = data?.data
             if (resultCode == RESULT_OK && uri != null) {
+                if (Build.VERSION.SDK_INT >= 29) stopService(Intent(this, CaptureProbeService::class.java))
                 var title = "Archivo de audio"
                 contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                     if (cursor.moveToFirst()) title = cursor.getString(0) ?: title
@@ -208,7 +221,7 @@ class MainActivity : FlutterActivity() {
                     putExtra("title", title)
                 })
             }
-            callback?.success(null)
+            callback?.success(resultCode == RESULT_OK && uri != null)
         } catch (error: Exception) { callback?.error("FILE_ERROR", error.localizedMessage, null) }
     }
 

@@ -3,6 +3,9 @@ package com.audiowav.audiowav
 import android.app.Activity
 import android.app.Instrumentation
 import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import android.media.audiofx.DynamicsProcessing
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -22,10 +25,17 @@ import kotlin.math.sin
 
 /** Device checks for actual platform decoding, JNI and AudioTrack, with generated audio only. */
 class DspInstrumentation : Instrumentation() {
-    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    private var sourceControlOnly = false
+    override fun onCreate(arguments: Bundle?) { sourceControlOnly = arguments?.getString("check") == "sourceControl"; super.onCreate(arguments); start() }
     override fun onStart() {
         val result = Bundle()
         try {
+            if (sourceControlOnly) {
+                sourceControlCheck()
+                result.putString("stream", "\nPASS source attenuation and restoration on a generated silent audio session.\n")
+                finish(Activity.RESULT_OK, result)
+                return
+            }
             jniSignalCheck()
             val stereo = File(targetContext.cacheDir, "dsp-test-stereo.wav")
             val mono = File(targetContext.cacheDir, "dsp-test-mono.wav")
@@ -38,6 +48,29 @@ class DspInstrumentation : Instrumentation() {
         } catch (failure: Throwable) {
             result.putString("stream", "\nFAIL: ${failure.stackTraceToString()}\n")
             finish(Activity.RESULT_CANCELED, result)
+        }
+    }
+    private fun sourceControlCheck() {
+        val track = AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+            .setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE).build())
+            .setAudioFormat(AudioFormat.Builder().setSampleRate(48000).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()).setBufferSizeInBytes(9600).build()
+        var observer: DynamicsProcessing? = null
+        val controller = SourceAttenuator()
+        try {
+            check(track.state == AudioTrack.STATE_INITIALIZED)
+            track.write(ShortArray(4800), 0, 4800); track.play()
+            // Exercise creation on a fresh session before an observer can initialize the engine.
+            check(controller.update(setOf(track.audioSessionId), true)) { controller.failure ?: "No fresh-session source control" }
+            controller.close()
+            observer = DynamicsProcessing(-1, track.audioSessionId, null)
+            check(controller.update(setOf(track.audioSessionId), true)) { controller.failure ?: "No source control" }
+            check(observer.getInputGainByChannelIndex(0) <= -80f) { "Original attenuation was not applied" }
+            controller.close()
+            check(kotlin.math.abs(observer.getInputGainByChannelIndex(0)) < .01f) { "Original gain was not restored" }
+            check(!observer.enabled) { "Source attenuation remained enabled after close" }
+        } finally {
+            controller.close(); observer?.release(); track.pause(); track.release()
         }
     }
     private fun jniSignalCheck() {

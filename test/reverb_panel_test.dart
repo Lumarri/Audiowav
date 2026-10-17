@@ -6,6 +6,46 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
+    'live DSP exposes all twelve reverb dials after original attenuation is confirmed',
+    (tester) async {
+      final audio = AudioController(supported: true);
+      audio.state = {
+        'running': true,
+        'captureProbe': {
+          'mode': 'dsp',
+          'active': true,
+          'dspReady': true,
+          'originalMuted': true,
+          'label': 'YouTube Music RVX',
+        },
+      };
+      audio.settings.enabled = true;
+      audio.settings.reverb = 3;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(child: ReverbPanel(audio: audio)),
+          ),
+        ),
+      );
+      final dials = tester
+          .widgetList<ReverbDial>(find.byType(ReverbDial))
+          .toList();
+      expect(dials, hasLength(12));
+      expect(dials.every((dial) => dial.onChanged != null), true);
+      expect(dials.any((dial) => dial.label == 'PRE DEL'), true);
+      expect(dials.any((dial) => dial.label == 'SIZE'), true);
+      expect(
+        find.text('DSP propio · YouTube Music RVX · En vivo'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      audio.dispose();
+    },
+  );
+
+  testWidgets(
     'controls remain visible when switching from local to other apps',
     (tester) async {
       final audio = AudioController(supported: true);

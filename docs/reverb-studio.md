@@ -1,12 +1,20 @@
 # Reverb Studio
 
+## DSP en vivo para otras apps (1.4.0, experimental)
+
+El botón **Activar DSP** solicita una captura nueva de la app indicada y conecta los bloques al mismo motor C++ que procesa archivos locales. La prueba de 20 segundos de 1.3.0 sigue siendo independiente. Después de confirmar señal y salida, PRE DEL, SIZE, los filtros, reflexiones, difusión, tono, anchura y WET actúan sobre el DSP propio en tiempo real; DEC admite hasta 20 s.
+
+DRY requiere además controlar el original. Se filtran las sesiones de AudioFlinger por PID y UID del origen elegido, se intenta atenuar únicamente esas sesiones y se verifica control y ganancia con `DynamicsProcessing`. Si no hay confirmación, se usa un retorno WET y se mantiene DRY deshabilitado. Si la captura deja de entregar señal al controlar el original, se libera esa atenuación y se vuelve al retorno. Detener, desactivar el motor, abrir un archivo local o perder la proyección restaura la fuente. No se guarda audio y la salida propia no se puede recapturar.
+
+No se promete latencia ni sustitución del original en todos los dispositivos. La confirmación del permiso de Android debe hacerla el usuario. Referencias de las API públicas: [captura interna](https://developer.android.com/media/platform/av-capture), [DynamicsProcessing](https://developer.android.com/reference/android/media/audiofx/DynamicsProcessing).
+
 ## Selección de fuente en la versión 1.2.1
 
 El panel permite elegir **Archivo local** u **Otras apps** para consultar los controles de cada motor, incluso con un archivo local cargado y pausado. Los doce controles permanecen visibles; los que la fuente no admite quedan deshabilitados. La selección cambia la vista de disponibilidad; los ajustes compatibles se comparten entre ambos motores.
 
 La vista inicial prioriza la reproducción local si está sonando; si está pausada y se detecta reproducción externa, muestra el motor Android. Una selección explícita permanece fija mientras la pantalla sigue abierta. El estado distingue bypass, reverb apagada, WET en cero, archivo pausado y ausencia de reproducción externa detectada. Las capacidades de otras apps priorizan las sesiones activas frente a anuncios antiguos.
 
-El límite Android de DEC se aplica al enviar al efecto y al editar su perilla. Consultar ese límite no sobrescribe el valor de un preset local que tenga una cola más larga. En este teléfono, los diagnósticos confirman un máximo nativo de 7 s y no confirman LATE DEL, ER ni ER DEL. DRY, L.CUT, H.CUT y WIDTH pertenecen al DSP local y no procesan YouTube Music.
+El límite Android de DEC se aplica al enviar al efecto y al editar su perilla. Consultar ese límite no sobrescribe el valor de un preset del DSP propio que tenga una cola más larga. En este teléfono, los diagnósticos confirman un máximo nativo de 7 s y no confirman LATE DEL, ER ni ER DEL. Estos límites describen la ruta nativa; el DSP en vivo de 1.4.0 habilita filtros, anchura y reflexiones sobre la captura autorizada de YouTube Music.
 
 ## DSP local en la versión 1.2.0
 
@@ -30,7 +38,7 @@ WET, reflexiones, difusión, tono y amortiguación también actúan sobre el mot
 
 Pausar detiene también la cola; reanudar continúa la reproducción. Al buscar otra posición se vacían la cola, la salida pendiente y el estado del decodificador. Al terminar el archivo se procesa silencio hasta que la cola sea suficientemente baja, con un máximo de 22 segundos, y se espera a que la salida pendiente termine. Reproducir de nuevo tras el final vuelve al inicio.
 
-El ecualizador, los graves y la ganancia siguen usando los efectos Android sobre la sesión de la salida local. Otras apps siguen usando el motor nativo descrito abajo. Los controles locales nuevos no se anuncian como disponibles para otras apps. Si ambas rutas están activas, los parámetros compartidos también se envían al efecto externo, que aplica sus límites propios.
+El ecualizador, los graves y la ganancia siguen usando los efectos Android sobre la sesión de la salida local. Sin captura en vivo, otras apps usan el motor nativo descrito abajo. Con captura autorizada y señal confirmada, los controles del DSP propio también procesan otras apps; DRY requiere controlar el original.
 
 Este es un algoritmo propio; no se promete equivalencia con Fruity Reeverb 2. La cifra de 40 ms del canal de controles no mide la latencia de audio. Las pruebas de señales del DSP se encuentran en `native_tests`; las pruebas de decodificación y reproducción reales están en `android/app/src/androidTest`.
 
@@ -60,7 +68,7 @@ El decaimiento se adapta al límite observado del motor en vez de deshabilitarse
 
 La calibración del máximo se conserva por implementación de efecto y versión del sistema. En la comprobación del 16 de octubre de 2026 se leyó una sesión externa con 7000 ms de caída, densidad 1000, difusión 950, relación HF 2000, tono HF −700 mB y retorno −912 mB. Ecualizador, graves y ganancia continuaron activos simultáneamente. `propertyWrites` permaneció en 1 al cambiar las bandas del ecualizador, confirmando que ese cambio no volvió a escribir la reverb.
 
-DRY independiente, filtros H.CUT/L.CUT, modulación y velocidad, BASS/CROSS, MID/SIDE, separación estéreo y sincronización a tempo no están implementados sobre el audio de otras apps. La interfaz no los presenta como controles operativos. Igualar esas funciones requiere procesar directamente las muestras de audio con otro motor, una capacidad que este efecto nativo por sesión no proporciona.
+El efecto nativo por sesión no proporciona DRY independiente, filtros H.CUT/L.CUT ni anchura. Esas funciones pertenecen al DSP propio descrito arriba; DRY en captura requiere controlar el original. Modulación y velocidad, BASS/CROSS, MID/SIDE y sincronización a tempo no están implementados en ninguno de los motores.
 
 ## Manejo
 
@@ -83,4 +91,4 @@ Los diagnósticos incluyen los valores reales y `propertyWrites`, el número de 
 adb shell dumpsys activity service com.audiowav.audiowav/.AudioService
 ```
 
-Hasta la versión 1.1.0, el reproductor propio utilizaba un efecto auxiliar conectado al `MediaPlayer`. En 1.2.0 lo sustituye el DSP local descrito arriba. En las otras apps se sigue requiriendo una variante de inserción del dispositivo y una sesión detectable. Los ajustes anteriores se migran conservando el decaimiento de su ambiente y WET.
+Hasta la versión 1.1.0, el reproductor propio utilizaba un efecto auxiliar conectado al `MediaPlayer`. En 1.2.0 lo sustituye el DSP local descrito arriba. Desde 1.4.0, otras apps pueden usar captura autorizada y DSP propio. La alternativa nativa sigue requiriendo una variante de inserción del dispositivo y una sesión detectable. Los ajustes anteriores se migran conservando el decaimiento de su ambiente y WET.

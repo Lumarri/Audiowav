@@ -123,6 +123,7 @@ class AudioService : Service() {
             process.waitFor()
             check(process.exitValue() == 0 && !dump.contains("Permission Denial")) { "No se pudo consultar la sesión de audio." }
             val sessions = PlaybackSessions.parse(dump)
+            if (Build.VERSION.SDK_INT >= 29) CaptureProbeService.playbackDump(dump)
             mainHandler.post {
                 if (instance !== this) return@post
                 detectionError = null
@@ -135,10 +136,11 @@ class AudioService : Service() {
     }
 
     private fun reconcileSessions() {
-        val wanted = (announcedSessions + detectedSessions).filter { it > 0 && it != player?.audioSessionId }.take(32).toSet()
+        val dspSession = if (Build.VERSION.SDK_INT >= 29) CaptureProbeService.outputSessionId() else 0
+        val wanted = (announcedSessions + detectedSessions).filter { it > 0 && it != player?.audioSessionId && it != dspSession }.take(32).toSet()
         (externalRacks.keys - wanted).forEach { externalRacks.remove(it)?.release() }
         (wanted - externalRacks.keys).forEach { session ->
-            externalRacks[session] = EffectRack(session, external = true).also { it.apply(settings) }
+            externalRacks[session] = EffectRack(session, external = true).also { applyExternal(session, it) }
             Log.i("Audiowav", "Connected session $session: ${externalRacks[session]?.capabilities()}")
         }
     }
@@ -160,9 +162,17 @@ class AudioService : Service() {
     fun configure() {
         settings = JSONObject(getSharedPreferences("studio", MODE_PRIVATE).getString("settings", "{}") ?: "{}")
         localRack?.apply(settings)
-        externalRacks.values.forEach { it.apply(settings) }
+        externalRacks.forEach { (session, rack) -> applyExternal(session, rack) }
         applyPlayerSettings()
         updateNotification()
+    }
+
+    private fun applyExternal(session: Int, rack: EffectRack) {
+        val customActive = Build.VERSION.SDK_INT >= 29 && CaptureProbeService.dspActive()
+        val dsp = customActive && CaptureProbeService.processes(session)
+        val originalMuted = dsp && CaptureProbeService.snapshot()["originalMuted"] == true
+        val values = if (originalMuted) JSONObject(settings.toString()).put("enabled", false) else settings
+        rack.apply(values, reverbAllowed = !customActive)
     }
 
     private fun load(uri: Uri, name: String) {

@@ -19,9 +19,35 @@ Usar un teléfono físico y auriculares estéreo. Comenzar con volumen bajo. Un 
 
 Registrar modelo, versión Android, ruta de salida y efectos disponibles. El soporte de sesiones externas y de reverb debe validarse por dispositivo.
 
+## DSP externo en vivo (1.4.0)
+
+El usuario confirmó que la prueba de 1.3.0 mostró **Se recibió audio** con YouTube Music RVX. Posteriormente autorizó la captura nueva de 1.4.0 y confirmó **DSP propio · En vivo**. Los diagnósticos del Moto g24 power registraron 7.727.104 fotogramas procesados a 48 kHz durante unos 161 segundos, señal reciente y cero underruns de salida. El mayor bloque DSP observado fue de 14.079 µs; es un máximo de ejecución, no una medición de latencia total. No se guardó PCM.
+
+En esa ejecución, Android rechazó el control del original con `AudioEffect: bad parameter value`; el motor utilizó retorno WET y mantuvo DRY deshabilitado. La continuidad del procesamiento está confirmada por los contadores; la mezcla, el retardo percibido y la equivalencia sonora requieren escucha. La corrección de 1.4.1 usa la arquitectura predeterminada de `DynamicsProcessing` en vez de imponer la variante temporal y añade el paso exacto al error de control.
+
+En el Moto g24 power, la instrumentación de 1.4.0 confirmó atenuación de entrada a −90 dB y restauración a 0 dB con el efecto deshabilitado, sobre una sesión sintética silenciosa inicializada previamente por un observador. La prueba de 1.4.1 pasó también creando primero el control en una sesión nueva sin observador, y luego verificó de nuevo atenuación y restauración. No capturó ni modificó la sesión de YouTube Music. Pasaron 11 pruebas JVM, incluidas la selección de sesiones por UID y la exclusión de DRY del retorno aun en bypass, y 23 pruebas Flutter. El análisis de Dart no informó problemas.
+
+- Activar DSP desde Reverb Studio y aprobar el diálogo Android personalmente. Con señal y salida preparadas deben habilitarse los controles del DSP; DRY únicamente si el original está atenuado con control confirmado.
+- Elegir Hall y alternar Reverb Studio y WET para comprobar el cambio audible. Ajustar filtros, predelay, reflexiones y WIDTH. Probar DRY solo si aparece habilitado. Comprobar latencia, sonido duplicado e interrupciones.
+- Detener desde la app y la notificación, desactivar Motor de audio, abrir un archivo local, desconectar auriculares y revocar la proyección. Comprobar que la fuente recupera su sonido y no queda una sesión atenuada.
+- Repetir tras cambiar de canción o sesión. La salida de Audiowav debe quedar excluida del detector y de la captura.
+- Si no se puede atenuar el original, verificar que se mantiene la señal original, el retorno no reproduce DRY incluso en bypass y solo esa perilla permanece deshabilitada.
+
+La instrumentación `check=sourceControl` comprueba atenuación y restauración sobre una sesión sintética silenciosa, sin capturar audio del usuario ni interactuar con otras apps:
+
+```sh
+adb shell am instrument -w -e check sourceControl com.audiowav.audiowav.test/com.audiowav.audiowav.DspInstrumentation
+```
+
+Los diagnósticos en vivo no guardan PCM:
+
+```sh
+adb shell dumpsys activity service com.audiowav.audiowav/.CaptureProbeService
+```
+
 ## Prueba voluntaria de captura externa (1.3.0)
 
-La recepción de audio real de YouTube Music/Spotify/Deezer queda pendiente de que el usuario apruebe los diálogos Android. No se debe autorizar automáticamente con ADB ni pulsar los diálogos de consentimiento en su lugar. Las pruebas JVM verifican silencio, rechazo de un único clic y niveles/presencia de señal repetida; las pruebas Flutter verifican selección, inicio explícito y detención. Estas pruebas no demuestran compatibilidad con una fuente real.
+El usuario confirmó recepción de audio en la prueba con YouTube Music; las demás apps y configuraciones requieren validación propia. No se debe autorizar automáticamente con ADB ni pulsar los diálogos de consentimiento en su lugar. Las pruebas JVM verifican silencio, rechazo de un único clic y niveles/presencia de señal repetida; las pruebas Flutter verifican selección, inicio explícito y detención. Estas pruebas automatizadas no demuestran compatibilidad con una fuente real.
 
 1. Abrir Audiowav por primera vez después de actualizar: no debe iniciarse captura ni aparecer un permiso sin pulsar **Probar 20 segundos**.
 2. Reproducir música en la app deseada, volver a Audiowav y elegir exactamente esa variante en **OTRAS APPS → Probar audio de otras apps**.
