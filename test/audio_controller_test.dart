@@ -112,7 +112,7 @@ void main() {
         );
     await controller.initialize();
     expect(controller.maxReverbDecay, 7);
-    expect(controller.settings.reverbParams.decay, 7);
+    expect(controller.settings.reverbParams.decay, 12);
     expect(controller.reverbControlAvailable('decay'), true);
   });
 
@@ -150,4 +150,48 @@ void main() {
     expect(copy.reverbParams.highCut, 8500);
     expect(copy.reverbParams.width, 1.5);
   });
+
+  test('external controls stay separate while a local file is loaded', () {
+    controller.state = {
+      'localDsp': true,
+      'playing': false,
+      'externalPlayingSessions': 1,
+      'capabilities': {'reverb': true},
+      'externalCapabilities': {'reverb': true},
+      'externalReverbControls': {'earlyLevel': false, 'decay': true},
+      'externalReverbMaxDecayMs': 7000,
+    };
+    expect(controller.localReverbView, false);
+    expect(controller.reverbControlAvailable('earlyLevel'), false);
+    expect(controller.reverbControlAvailable('dry'), false);
+    expect(controller.maxReverbDecay, 7);
+    controller.selectReverbSource(true);
+    expect(controller.reverbControlAvailable('earlyLevel'), true);
+    expect(controller.reverbControlAvailable('dry'), true);
+    expect(controller.maxReverbDecay, 20);
+    controller.selectReverbSource(false);
+    controller.state['externalPlayingSessions'] = 0;
+    expect(controller.localReverbView, false);
+    controller.state['externalCapabilities'] = {'reverb': false};
+    expect(controller.available('reverb'), false);
+  });
+
+  test(
+    'native capability polling does not shorten a saved local decay',
+    () async {
+      controller.settings.reverbParams.decay = 15;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (call) async => {
+              'running': true,
+              'reverbMaxDecayMs': 7000,
+              'externalReverbMaxDecayMs': 7000,
+            },
+          );
+      await controller.refresh();
+      expect(controller.maxReverbDecay, 7);
+      expect(controller.settings.reverbParams.decay, 15);
+    },
+  );
 }

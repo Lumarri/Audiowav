@@ -173,6 +173,8 @@ class AudioService : Service() {
                 onReady = { ready ->
                     if (ready === player) {
                         prepared = true
+                        // Detection may have seen this session before onReady reached the main thread.
+                        externalRacks.remove(ready.audioSessionId)?.release()
                         localRack = EffectRack(ready.audioSessionId).also { it.apply(settings) }
                         applyPlayerSettings()
                         if (audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) ready.start()
@@ -219,18 +221,27 @@ class AudioService : Service() {
         val racks = listOfNotNull(localRack) + externalRacks.values
         val available = listOf("equalizer", "bass", "gain", "reverb").associateWith { name -> racks.any { it.capabilities()[name] == true } }.toMutableMap()
         if (prepared) available["reverb"] = true
-        val support = externalRacks.values.map { it.reverbControls() }
+        // An announced session can outlive a killed player. Prefer the sessions
+        // actually playing so a stale rack cannot hide a failure on the new one.
+        val activeExternal = externalRacks.filterKeys { it in detectedSessions }.values
+        val external = activeExternal.ifEmpty { externalRacks.values }
+        val support = external.map { it.reverbControls() }
         val reverbControls = support.flatMap { it.keys }.distinct().associateWith { key -> support.any { it[key] == true } }
+        val externalCapabilities = listOf("equalizer", "bass", "gain", "reverb").associateWith { name -> external.any { it.capabilities()[name] == true } }
         val localControls = listOf("decay", "preDelay", "size", "diffusion", "hfRatio", "hfLevel", "earlyLevel", "earlyDelay", "wet", "dry", "lowCut", "highCut", "width").associateWith { true }
         return mapOf("running" to true, "hasTrack" to prepared, "playing" to (prepared && player?.isPlaying == true),
             "position" to (if (prepared) player?.currentPosition else 0), "duration" to (if (prepared) player?.duration else 0),
             "title" to title, "sessions" to externalRacks.size, "capabilities" to available, "error" to error,
             "advancedDetection" to advancedDetection(), "detectionError" to detectionError,
             "localDsp" to prepared, "tail" to (player?.tail == true),
+            "externalCapabilities" to externalCapabilities,
+            "externalPlayingSessions" to externalRacks.keys.count { it in detectedSessions },
+            "externalReverbControls" to reverbControls,
+            "externalReverbError" to external.mapNotNull { it.reverbError() }.firstOrNull(),
             "localSampleRate" to player?.sampleRate,
             "reverbControls" to (if (prepared) localControls else reverbControls),
             "reverbMaxDecayMs" to (if (prepared) 20000 else externalRacks.values.mapNotNull { it.maximumReverbDecayMs() }.minOrNull()),
-            "externalReverbMaxDecayMs" to externalRacks.values.mapNotNull { it.maximumReverbDecayMs() }.minOrNull(),
+            "externalReverbMaxDecayMs" to external.mapNotNull { it.maximumReverbDecayMs() }.minOrNull(),
             "reverbError" to (if (prepared) null else externalRacks.values.mapNotNull { it.reverbError() }.firstOrNull()))
     }
 
@@ -271,6 +282,7 @@ class AudioService : Service() {
         writer.println("advancedDetection=${advancedDetection()} detectionError=$detectionError")
         writer.println("settings=$settings")
         writer.println("local=${localRack?.diagnostics()}")
+        writer.println("localSession=${player?.audioSessionId} playing=${player?.isPlaying} error=$error detected=$detectedSessions announced=$announcedSessions")
         writer.println("localDsp=${prepared} sampleRate=${player?.sampleRate} processedFrames=${player?.processedFrames} maxProcessMicros=${player?.maxProcessMicros} underruns=${player?.underruns} tail=${player?.tail}")
         externalRacks.forEach { (session, rack) -> writer.println("session=$session actual=${rack.diagnostics()}") }
     }

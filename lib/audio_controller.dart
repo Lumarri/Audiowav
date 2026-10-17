@@ -79,10 +79,20 @@ class AudioController extends ChangeNotifier {
   bool _sending = false, _dirty = false;
   bool loading = true;
   String? error;
+  bool? _localReverbView;
   bool get running => state['running'] == true;
   bool get playing => state['playing'] == true;
   bool get hasTrack => state['hasTrack'] == true;
   bool get localDsp => state['localDsp'] == true;
+  bool get localReverbView =>
+      _localReverbView ??
+      (localDsp &&
+          (playing || (state['externalPlayingSessions'] as num? ?? 0) == 0));
+  void selectReverbSource(bool local) {
+    _localReverbView = local;
+    _notify();
+  }
+
   double get maxReverbHighCut =>
       ((state['localSampleRate'] as num? ?? 48000) * .45).toDouble().clamp(
         2000,
@@ -90,34 +100,47 @@ class AudioController extends ChangeNotifier {
       );
   bool get advancedDetection => state['advancedDetection'] == true;
   double get maxReverbDecay =>
-      ((state['reverbMaxDecayMs'] as num? ?? 20000).toDouble() / 1000).clamp(
-        .1,
-        20,
-      );
+      ((localReverbView
+                      ? 20000
+                      : state['externalReverbMaxDecayMs'] as num? ??
+                            state['reverbMaxDecayMs'] as num? ??
+                            20000)
+                  .toDouble() /
+              1000)
+          .clamp(.1, 20);
   String get track => state['title'] as String? ?? 'Tu próxima canción';
   int get position => (state['position'] as num? ?? 0).toInt();
   int get duration => (state['duration'] as num? ?? 0).toInt();
   int get sessions => (state['sessions'] as num? ?? 0).toInt();
   double get volume => (state['volume'] as num? ?? .5).toDouble();
-  bool available(String effect) =>
-      supported && (state['capabilities'] as Map?)?[effect] == true;
+  bool available(String effect) {
+    if (!supported) return false;
+    if (effect == 'reverb') {
+      if (localReverbView) return localDsp;
+      final external = state['externalCapabilities'] as Map?;
+      if (external != null) return external[effect] == true;
+    }
+    return (state['capabilities'] as Map?)?[effect] == true;
+  }
+
   bool reverbControlAvailable(String name) =>
       available('reverb') &&
-      (localDsp ||
+      (localReverbView ||
           !const {'dry', 'lowCut', 'highCut', 'width'}.contains(name)) &&
-      (state['reverbControls'] as Map?)?[name] != false;
+      (localReverbView ||
+          ((state['externalReverbControls'] ?? state['reverbControls'])
+                  as Map?)?[name] !=
+              false);
 
   void selectReverbPreset(ReverbPreset preset, {bool userPreset = false}) =>
       update((s) {
         s.reverb = preset.mode;
         s.reverbParams = preset.parameters();
-        s.reverbParams.decay = s.reverbParams.decay.clamp(.1, maxReverbDecay);
         s.wet = preset.wet;
         s.reverbProfile = userPreset ? 'user:${preset.name}' : preset.name;
       });
   void editReverb(void Function(AudioSettings) change) => update((s) {
     change(s);
-    s.reverbParams.decay = s.reverbParams.decay.clamp(.1, maxReverbDecay);
     s.reverbProfile = 'Personalizado';
   });
   bool saveReverbPreset(String name) {
@@ -160,10 +183,6 @@ class AudioController extends ChangeNotifier {
       if (data != null) {
         settings.restore(data['settings'] as Map? ?? {});
         state = data;
-        settings.reverbParams.decay = settings.reverbParams.decay.clamp(
-          .1,
-          maxReverbDecay,
-        );
       }
       settings.enabled = running && settings.enabled;
       _poll = Timer.periodic(const Duration(seconds: 1), (_) => refresh());
@@ -193,10 +212,6 @@ class AudioController extends ChangeNotifier {
       if (data != null && !_disposed) {
         final wasRunning = running;
         state = data;
-        settings.reverbParams.decay = settings.reverbParams.decay.clamp(
-          .1,
-          maxReverbDecay,
-        );
         if (wasRunning && !running) settings.enabled = false;
         if (running &&
             !_sending &&

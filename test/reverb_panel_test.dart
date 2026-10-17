@@ -5,6 +5,67 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+    'controls remain visible when switching from local to other apps',
+    (tester) async {
+      final audio = AudioController(supported: true);
+      audio.state = {
+        'localDsp': true,
+        'playing': true,
+        'running': true,
+        'capabilities': {'reverb': true},
+        'externalCapabilities': {'reverb': true},
+        'externalReverbControls': {'earlyLevel': false, 'preDelay': false},
+        'externalReverbMaxDecayMs': 7000,
+      };
+      audio.settings.enabled = true;
+      audio.settings.reverb = 3;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ListenableBuilder(
+                listenable: audio,
+                builder: (_, _) => ReverbPanel(audio: audio),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(ReverbDial), findsNWidgets(12));
+      await tester.tap(find.text('Otras apps'));
+      await tester.pump();
+      expect(find.text('Motor Android · Audio de otras apps'), findsOneWidget);
+      expect(find.byType(ReverbDial), findsNWidgets(12));
+      final dials = tester.widgetList<ReverbDial>(find.byType(ReverbDial));
+      for (final label in [
+        'DRY',
+        'L.CUT',
+        'H.CUT',
+        'WIDTH',
+        'ER',
+        'LATE DEL',
+      ]) {
+        expect(
+          dials.singleWhere((dial) => dial.label == label).onChanged,
+          isNull,
+        );
+      }
+      expect(dials.singleWhere((dial) => dial.label == 'DEC').max, 7);
+      audio.state = {'running': false};
+      audio.selectReverbSource(true);
+      await tester.pump();
+      expect(find.byType(ReverbDial), findsNWidgets(12));
+      expect(
+        find.text('Abre un archivo de audio para usar estos controles.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      audio.dispose();
+    },
+  );
+
   testWidgets('local DSP provides its own dry, filter and width controls', (
     tester,
   ) async {

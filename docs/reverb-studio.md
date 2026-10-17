@@ -1,5 +1,13 @@
 # Reverb Studio
 
+## Selección de fuente en la versión 1.2.1
+
+El panel permite elegir **Archivo local** u **Otras apps** para consultar los controles de cada motor, incluso con un archivo local cargado y pausado. Los doce controles permanecen visibles; los que la fuente no admite quedan deshabilitados. La selección cambia la vista de disponibilidad; los ajustes compatibles se comparten entre ambos motores.
+
+La vista inicial prioriza la reproducción local si está sonando; si está pausada y se detecta reproducción externa, muestra el motor Android. Una selección explícita permanece fija mientras la pantalla sigue abierta. El estado distingue bypass, reverb apagada, WET en cero, archivo pausado y ausencia de reproducción externa detectada. Las capacidades de otras apps priorizan las sesiones activas frente a anuncios antiguos.
+
+El límite Android de DEC se aplica al enviar al efecto y al editar su perilla. Consultar ese límite no sobrescribe el valor de un preset local que tenga una cola más larga. En este teléfono, los diagnósticos confirman un máximo nativo de 7 s y no confirman LATE DEL, ER ni ER DEL. DRY, L.CUT, H.CUT y WIDTH pertenecen al DSP local y no procesan YouTube Music.
+
 ## DSP local en la versión 1.2.0
 
 Los archivos abiertos dentro de Audiowav usan un motor C++ propio. La ruta es `MediaExtractor` → `MediaCodec` (o PCM directo) → DSP → `AudioTrack`. No se carga el archivo completo en memoria. El código de procesamiento no hace asignaciones de memoria ni llamadas a Flutter durante cada bloque.
