@@ -2,6 +2,16 @@
 
 Estudio de audio móvil construido con Flutter, Kotlin y un motor de reverberación C++ para Android.
 
+Proyecto de código abierto bajo la [licencia MIT](LICENSE).
+
+## Descargar para Android
+
+La [versión de pruebas 1.4.1](https://github.com/Lumarri/Audiowav/releases/tag/v1.4.1) incluye la [APK para Android ARM64](https://github.com/Lumarri/Audiowav/releases/download/v1.4.1/Audiowav-1.4.1-arm64-v8a-debug.apk) y su suma SHA-256. Es la compilación de desarrollo comprobada en un Moto g24 power con Android 14; no es una compilación de producción. Requiere Android 8.0 o posterior. La captura para DSP de otras apps requiere Android 10 o posterior y autorización en el teléfono.
+
+Descarga e instala la APK desde el teléfono. Para usar Reverb Studio con YouTube Music, reproduce una canción, abre **Otras apps → Activar DSP** y acepta el aviso de Android. El control independiente de DRY necesita además la detección avanzada por DUMP descrita abajo. La compatibilidad depende de la app de origen y del dispositivo.
+
+También puedes descargar o clonar el código y compilarlo siguiendo la sección **Ejecutar**.
+
 ## Funciones
 
 - Ecualizador de cinco controles (60 Hz, 230 Hz, 910 Hz, 3.6 kHz, 14 kHz), de −12 a +12 dB. Se interpolan en escala logarítmica a las bandas reales de Android.
