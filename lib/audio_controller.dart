@@ -69,9 +69,14 @@ class AudioController extends ChangeNotifier {
     : channel = channel ?? const MethodChannel('audiowav/audio'),
       supported =
           supported ??
-          (!kIsWeb && defaultTargetPlatform == TargetPlatform.android);
+          (!kIsWeb &&
+              (defaultTargetPlatform == TargetPlatform.android ||
+                  defaultTargetPlatform == TargetPlatform.windows));
   final MethodChannel channel;
   final bool supported;
+  bool get isDesktop =>
+      state['platform'] == 'windows' ||
+      (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows);
   final settings = AudioSettings();
   Map<dynamic, dynamic> state = {};
   Timer? _poll, _debounce;
@@ -89,7 +94,7 @@ class AudioController extends ChangeNotifier {
       captureProbe['dspReady'] == true;
   bool get externalDryControl =>
       externalDspActive && captureProbe['originalMuted'] == true;
-  bool get studioDsp => localReverbView || externalDspActive;
+  bool get studioDsp => isDesktop || localReverbView || externalDspActive;
   List<Map> get captureTargets =>
       (state['captureTargets'] as List? ?? const []).whereType<Map>().toList();
   Map? get preferredCaptureTarget {
@@ -341,6 +346,11 @@ class AudioController extends ChangeNotifier {
 
   Future<void> setVolume(double value) async {
     await _invoke('volume', value);
+    await refresh();
+  }
+
+  Future<void> selectOutput(String id) async {
+    await _invoke('selectOutput', id);
     await refresh();
   }
 

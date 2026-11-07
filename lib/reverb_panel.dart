@@ -94,6 +94,8 @@ class ReverbPanel extends StatelessWidget {
                     : 'DSP propio · Sin archivo cargado')
               : audio.externalDspActive
               ? 'DSP propio · ${audio.captureProbe['label']} · En vivo'
+              : audio.isDesktop
+              ? 'DSP Windows · Selecciona una aplicación'
               : 'Motor Android · Audio de otras apps',
           style: const TextStyle(color: _accent, fontSize: 11),
         ),
@@ -106,11 +108,15 @@ class ReverbPanel extends StatelessWidget {
                 ? (audio.externalDryControl
                       ? 'El audio de la app pasa por el DSP propio. DRY y WET controlan la mezcla procesada. Esta ruta añade retardo.'
                       : 'El DSP añade solo reverberación al sonido original. DRY queda fijo porque no se confirmó el control del original. Esta ruta añade retardo.')
+                : audio.isDesktop
+                ? 'Selecciona una app con audio y pulsa Activar DSP en el panel de fuente.'
                 : 'Está activo el motor limitado de Android. Activa Reverb Studio en vivo para enviar el audio al DSP propio.',
             style: const TextStyle(color: _muted, fontSize: 10, height: 1.5),
           ),
         ),
-        if (!audio.localReverbView && audio.state['captureSupported'] == true)
+        if (!audio.isDesktop &&
+            !audio.localReverbView &&
+            audio.state['captureSupported'] == true)
           Padding(
             padding: const EdgeInsets.only(top: 10),
             child: audio.externalDspActive
@@ -492,21 +498,22 @@ class ReverbPanel extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 12),
-        const ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          childrenPadding: EdgeInsets.only(bottom: 10),
-          dense: true,
-          title: Text(
-            'Alcance con YouTube Music',
-            style: TextStyle(fontSize: 11, color: _muted),
-          ),
-          children: [
-            Text(
-              'Activar DSP conecta el audio autorizado de la app elegida a nuestro motor de reverb: filtros L.CUT/H.CUT, predelay, reflexiones, difusión, anchura y WET. DRY requiere confirmar el control del original. La captura añade retardo.\n\nSin DSP en vivo, se usa la reverb de Android y sus límites. Los controles sin soporte aparecen deshabilitados. No incluye el algoritmo propietario de Fruity Reeverb 2, modulación, BASS/CROSS, MID/SIDE ni sincronización a tempo.',
-              style: TextStyle(color: _muted, fontSize: 11, height: 1.5),
+        if (!audio.isDesktop)
+          const ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.only(bottom: 10),
+            dense: true,
+            title: Text(
+              'Alcance con YouTube Music',
+              style: TextStyle(fontSize: 11, color: _muted),
             ),
-          ],
-        ),
+            children: [
+              Text(
+                'Activar DSP conecta el audio autorizado de la app elegida a nuestro motor de reverb: filtros L.CUT/H.CUT, predelay, reflexiones, difusión, anchura y WET. DRY requiere confirmar el control del original. La captura añade retardo.\n\nSin DSP en vivo, se usa la reverb de Android y sus límites. Los controles sin soporte aparecen deshabilitados. No incluye el algoritmo propietario de Fruity Reeverb 2, modulación, BASS/CROSS, MID/SIDE ni sincronización a tempo.',
+                style: TextStyle(color: _muted, fontSize: 11, height: 1.5),
+              ),
+            ],
+          ),
       ],
     );
   }

@@ -27,7 +27,7 @@ void Reverb::Delay::push(float v) {
     samples[position] = clean(v);
     if (++position == int(samples.size())) position = 0;
 }
-void Reverb::Delay::clear() { std::fill(samples.begin(), samples.end(), 0); position = 0; }
+void Reverb::Delay::clear() { std::fill(samples.begin(), samples.end(), 0.f); position = 0; }
 
 Reverb::Reverb(int sampleRate) : rate(std::clamp(sampleRate, 8000, 192000)) {
     for (auto& line : lines) line = Delay(int(rate * .12f) + 8);

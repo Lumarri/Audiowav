@@ -5,3 +5,7 @@ add_executable(reverb_test reverb_test.cpp ../android/app/src/main/cpp/reverb.cp
 target_include_directories(reverb_test PRIVATE ../android/app/src/main/cpp)
 target_compile_features(reverb_test PRIVATE cxx_std_17)
 add_test(NAME dsp_signal_checks COMMAND reverb_test)
+add_executable(desktop_dsp_test desktop_dsp_test.cpp ../windows/runner/audio_dsp.cpp ../android/app/src/main/cpp/reverb.cpp)
+target_include_directories(desktop_dsp_test PRIVATE ../windows/runner ../android/app/src/main/cpp)
+target_compile_features(desktop_dsp_test PRIVATE cxx_std_17)
+add_test(NAME desktop_dsp_signal_checks COMMAND desktop_dsp_test)

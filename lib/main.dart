@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'audio_controller.dart';
 import 'studio_screen.dart';
+import 'desktop_studio_screen.dart';
+
+import 'package:flutter/foundation.dart';
 
 void main() => runApp(const AudiowavApp());
 
@@ -24,6 +27,8 @@ class AudiowavApp extends StatelessWidget {
       useMaterial3: true,
       sliderTheme: const SliderThemeData(trackHeight: 3),
     ),
-    home: StudioScreen(controller: controller),
+    home: !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
+        ? DesktopStudioScreen(controller: controller)
+        : StudioScreen(controller: controller),
   );
 }

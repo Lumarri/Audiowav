@@ -1,8 +1,16 @@
 # Audiowav
 
-Estudio de audio móvil construido con Flutter, Kotlin y un motor de reverberación C++ para Android.
+Estudio de audio para Android y Windows x64, construido con Flutter y un motor de reverberación C++. Android usa Kotlin; Windows utiliza Media Foundation y WASAPI desde C++.
 
 Proyecto de código abierto bajo la [licencia MIT](LICENSE).
+
+## Windows x64
+
+La versión 1.5.0 incorpora una interfaz de escritorio, reproducción de archivos y captura por aplicación para Windows 11 x64, con ecualizador, graves, ganancia, balance y Reverb Studio. No usa un emulador ni requiere Java. Consulta [instalación, arquitectura y pruebas de Windows](docs/windows.md).
+
+Para compilar: `flutter build windows --release`. Ejecuta `build/windows/x64/runner/Release/audiowav.exe` conservando las DLL y la carpeta `data` junto al ejecutable.
+
+El paquete portable de pruebas se publica en [Audiowav 1.5.0 para Windows](https://github.com/Lumarri/Audiowav/releases/tag/v1.5.0). Extrae el ZIP completo y abre `audiowav.exe`. El procesamiento local es completo; la captura directa de otras apps puede quedar en retorno WET. La ruta completa de otras apps requiere un cable virtual instalado por separado y elegir una salida física diferente.
 
 ## Descargar para Android
 
